@@ -1,0 +1,3 @@
+geometry_msgs/Vector3 position
+geometry_msgs/Vector3[] local_position_per_joint
+geometry_msgs/Quaternion[] local_orientation_per_joint

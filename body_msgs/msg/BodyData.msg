@@ -1,0 +1,3 @@
+geometry_msgs/Vector3 global_position
+geometry_msgs/Quaternion global_root_orientation
+Keypoint[] keypoints
