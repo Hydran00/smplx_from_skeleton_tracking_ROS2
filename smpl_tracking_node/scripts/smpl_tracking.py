@@ -94,6 +94,7 @@ class SMPLXTracking(Node):
         self.timer = self.create_timer(0.01, self.draw)
         self.get_logger().info("Tracking node started")
     
+    @staticmethod
     def quaternion_to_rotvec(self, quat):
         """Convert quaternion to rotation vector using scipy."""
         q = np.array([quat.x, quat.y, quat.z, quat.w])
@@ -102,14 +103,19 @@ class SMPLXTracking(Node):
         q = q / np.linalg.norm(q)
         rvec = scipy.spatial.transform.Rotation.from_quat(q).as_rotvec()
         rvec = np.array(rvec)
-        # wrap angles to [-pi, pi]
         for i in range(3):
-            while rvec[i] > np.pi:
-                rvec[i] -= 2 * np.pi
-            while rvec[i] < -np.pi:
-                rvec[i] += 2 * np.pi            
+            rvec[i] = self.wrap_angle(rvec[i])
         return rvec 
     
+    @staticmethod
+    # wrap angles to [-pi, pi]
+    def wrap_angle(angle):
+        while angle > np.pi:
+            angle -= 2 * np.pi
+        while angle < -np.pi:
+            angle += 2 * np.pi
+        return angle
+
     def callback(self, msg):
         """Callback for body tracking data."""
         global_orientation = self.quaternion_to_rotvec(msg.global_root_orientation)
