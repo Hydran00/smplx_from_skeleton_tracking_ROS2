@@ -100,8 +100,15 @@ class SMPLXTracking(Node):
         if np.linalg.norm(q) == 0:
             return np.zeros(3)
         q = q / np.linalg.norm(q)
-        R = scipy.spatial.transform.Rotation.from_quat(q)
-        return R.as_rotvec()
+        rvec = scipy.spatial.transform.Rotation.from_quat(q).as_rotvec()
+        rvec = np.array(rvec)
+        # wrap angles to [-pi, pi]
+        for i in range(3):
+            while rvec[i] > np.pi:
+                rvec[i] -= 2 * np.pi
+            while rvec[i] < -np.pi:
+                rvec[i] += 2 * np.pi            
+        return rvec 
     
     def callback(self, msg):
         """Callback for body tracking data."""
@@ -120,16 +127,22 @@ class SMPLXTracking(Node):
                 rvec = self.quaternion_to_rotvec(self.current_body_pose[map_mir[i+1]])
             else:
                 rvec = self.quaternion_to_rotvec(self.current_body_pose[map[i+1]])
-            self.body_pose[0][3*i:3*i+3] = rvec[0]
+            self.body_pose[0][3*i] = rvec[0]
             self.body_pose[0][3*i+1] = rvec[1]
             self.body_pose[0][3*i+2] = rvec[2]
         
         # add hand pose
         if self.model_type == 'smpl':
+            
             if(self.mirror):
-                self.body_pose[0][3*21:3*21+3] = self.quaternion_to_rotvec(self.current_body_pose[map_mir[21]])
+                rvec = self.quaternion_to_rotvec(self.current_body_pose[map_mir[21]])
             else:
-                self.body_pose[0][3*22:3*22+3] = self.quaternion_to_rotvec(self.current_body_pose[map[i+1]])
+                rvec = self.quaternion_to_rotvec(self.current_body_pose[map[21]])
+                
+            self.body_pose[0][3*21] = rvec[0]
+            self.body_pose[0][3*21+1] = rvec[1]
+            self.body_pose[0][3*21+2] = rvec[2]
+        
         else:
             # TODO: add hand pose for smplx
             pass

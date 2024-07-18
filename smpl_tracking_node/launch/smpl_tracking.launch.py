@@ -25,8 +25,8 @@ def generate_launch_description():
         output="both",
         parameters=[{
             "mirror":True,
-            "model_type":"smplx",
-            "model_path": expanduser("~")+ "/models/smplx/SMPLX_MALE.npz"
+            "model_type":"smpl",
+            "model_path": expanduser("~")+ "/models/smpl/smpl_male.pkl"
         }
         ]
     )
