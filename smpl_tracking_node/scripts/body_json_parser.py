@@ -12,6 +12,7 @@ from body_msgs.msg import Keypoint, BodyData  # Assume these are defined as per 
 class ParseBodyJson(Node):
     def __init__(self, port=20000, multicast_ip_address="230.0.0.1", use_multicast=True, buffer_size=65536):
         super().__init__('zed_streaming_client')
+        self.get_logger().info("Starting ZED Body Tracking Data Parser, if the node is not receiving data, please disable firewall")
         self.port = port
         self.multicast_ip_address = multicast_ip_address
         self.use_multicast = use_multicast

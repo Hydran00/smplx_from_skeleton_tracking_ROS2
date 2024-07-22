@@ -1,15 +1,16 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 import rclpy
 from rclpy.node import Node
-from cv_bridge import CvBridge
 import numpy as np
 from body_msgs.msg import BodyData
 
 import scipy
 import torch
+import torch.utils.dlpack
 import open3d as o3d
 import smplx
 import os
+import trimesh
 
 # Importing required mappings
 from body38_to_smpl import ZED_BODY_38_TO_SMPL_BODY_24 as map, ZED_BODY_38_TO_SMPL_BODY_24_MIRROR as map_mir
@@ -29,8 +30,7 @@ DEVICE = torch.device('cuda') if torch.cuda.is_available() else torch.device('cp
 class SMPLXTracking(Node):
     def __init__(self):
         super().__init__('pose_depth_estimator')
-
-        self.bridge = CvBridge()
+        self.get_logger().info("Initializing SMPLX tracking node")
         
         # Subscriber for body tracking data
         self.create_subscription(BodyData, 'body_tracking_data', self.callback, 10)
@@ -46,15 +46,16 @@ class SMPLXTracking(Node):
         self.mirror = self.get_parameter('mirror').get_parameter_value().bool_value
         
         # log parameters
-        self.get_logger().info(f"Model path: {self.model_path}")
-        self.get_logger().info(f"Model type: {self.model_type}")
-        self.get_logger().info(f"Mirror: {self.mirror}")        
+        # self.get_logger().info(f"Model path: {self.model_path}")
+        # self.get_logger().info(f"Model type: {self.model_type}")
+        # self.get_logger().info(f"Mirror: {self.mirror}")        
         
         if(os.path.exists(self.model_path) == False):
             self.get_logger().error("Model path does not exist")
             exit(1)
         
         
+        # self.get_logger().info("Loading model: {}".format(self.model_type))
         # Load SMPLX/SMPL model
         if(self.model_type == 'smplx'):
             self.model = smplx.create(self.model_path, model_type=self.model_type,
@@ -80,12 +81,13 @@ class SMPLXTracking(Node):
             self.body_pose = torch.zeros((1, 3 * NUM_BODY_JOINTS + 3 * 2)).to(DEVICE)
         self.current_body_pose = None 
         
+        # self.get_logger().info("Model loaded, initializing visualization")
         # Open3D visualization setup
         self.viz = o3d.visualization.Visualizer()
         self.viz.create_window()
         opt = self.viz.get_render_option()
         opt.show_coordinate_frame = True
-        opt.background_color = np.asarray([0.5, 0.5, 0.5])
+        # opt.background_color = np.asarray([0.5, 0.5, 0.5])
         opt.mesh_show_wireframe = True
         self.first = True
         self.mesh = o3d.geometry.TriangleMesh()
@@ -95,7 +97,13 @@ class SMPLXTracking(Node):
         self.get_logger().info("Tracking node started")
     
     @staticmethod
-    def quaternion_to_rotvec(self, quat):
+    def quaternion_to_rotvec(quat):
+        def wrap_angle(angle):
+            while angle > np.pi:
+                angle -= 2 * np.pi
+            while angle < -np.pi:
+                angle += 2 * np.pi
+            return angle
         """Convert quaternion to rotation vector using scipy."""
         q = np.array([quat.x, quat.y, quat.z, quat.w])
         if np.linalg.norm(q) == 0:
@@ -104,26 +112,20 @@ class SMPLXTracking(Node):
         rvec = scipy.spatial.transform.Rotation.from_quat(q).as_rotvec()
         rvec = np.array(rvec)
         for i in range(3):
-            rvec[i] = self.wrap_angle(rvec[i])
+            rvec[i] = wrap_angle(rvec[i])
         return rvec 
     
-    @staticmethod
-    # wrap angles to [-pi, pi]
-    def wrap_angle(angle):
-        while angle > np.pi:
-            angle -= 2 * np.pi
-        while angle < -np.pi:
-            angle += 2 * np.pi
-        return angle
 
     def callback(self, msg):
         """Callback for body tracking data."""
+        # self.get_logger().info("Received body tracking data")
         global_orientation = self.quaternion_to_rotvec(msg.global_root_orientation)
         self.global_orient[0] = torch.tensor(global_orientation).to(DEVICE)
         self.current_body_pose = msg.keypoints[0].local_orientation_per_joint
 
 
     def draw(self):
+        # self.get_logger().info("Drawing")
         """Draw the SMPLX model with the current pose."""
         if self.current_body_pose is None:
             return
@@ -172,13 +174,15 @@ class SMPLXTracking(Node):
                 left_hand_pose=self.left_hand_pose,
                 right_hand_pose=self.right_hand_pose,
                 expression=self.expression,
-                return_verts=True
+                return_verts=True,
+                return_full_pose=False
             )
-
-        vertices = output.vertices[0].detach().cpu().numpy()
+        vertices = output.vertices[0].detach().cpu().numpy() 
         faces = self.model.faces
+
         self.mesh.vertices = o3d.utility.Vector3dVector(vertices)
         self.mesh.triangles = o3d.utility.Vector3iVector(faces)
+
         
         if self.first:
             self.viz.add_geometry(self.mesh)
@@ -188,12 +192,30 @@ class SMPLXTracking(Node):
         self.viz.poll_events()
         self.viz.update_renderer()
         
+        
 def main(args=None):
     rclpy.init(args=args)
     node = SMPLXTracking()
     rclpy.spin(node)
     node.destroy_node()
     rclpy.shutdown()
+
+    # import open3d
+    # import numpy as np
+    # import rclpy
+    # def main(args=None):
+    #     rclpy.init(args=args)
+    #     rclpy.shutdown()
+    #     pcd = open3d.geometry.PointCloud()
+    #     np_points = np.random.rand(100000, 3)
+
+    #     # From numpy to Open3D
+    #     pcd.points = open3d.utility.Vector3dVector(np_points)
+
+    #     # From Open3D to numpy
+    #     np_points = np.asarray(pcd.points)
+
+    #     open3d.visualization.draw_geometries([pcd])
 
 if __name__ == '__main__':
     main()
