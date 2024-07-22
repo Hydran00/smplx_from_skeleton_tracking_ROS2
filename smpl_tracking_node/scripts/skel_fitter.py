@@ -4,8 +4,6 @@ import sys
 sys.path.append(os.path.join(os.path.expanduser("~"), "SKEL_WS", "SKEL"))
 sys.path.append(os.path.join(os.path.expanduser("~"), "SKEL_WS", "SKEL", "skel_venv", "lib", "python3.8", "site-packages","torch"))
 sys.path.append(os.path.join(os.path.expanduser("~"), "SKEL_WS", "SKEL", "skel_venv", "lib", "python3.8", "site-packages","numpy"))
-sys.path.append(os.path.join(os.path.expanduser("~"), "SKEL_WS", "SKEL", "skel_venv", "lib", "python3.8", "site-packages","numpy.libs"))
-sys.path.append(os.path.join(os.path.expanduser("~"), "SKEL_WS", "SKEL", "skel_venv", "lib", "python3.8", "site-packages","numpy-1.24.4.dist-info"))
 import trimesh
 import rclpy
 from rclpy.node import Node
@@ -38,8 +36,6 @@ class SMPLXTracking(Node):
     def __init__(self):
         super().__init__('pose_depth_estimator')
 
-        self.bridge = CvBridge()
-        
         # Subscriber for body tracking data
         self.create_subscription(BodyData, 'body_tracking_data', self.callback, 10)
         

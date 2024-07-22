@@ -10,7 +10,15 @@ import torch.utils.dlpack
 import open3d as o3d
 import smplx
 import os
-import trimesh
+from dataclasses import dataclass
+from smpl_params_sender import SMPLParamsSender
+
+@dataclass
+class SMPLParams:
+    betas: torch.Tensor
+    gender: str
+    global_orient: torch.Tensor
+    body_pose_axis_angle: torch.Tensor
 
 # Importing required mappings
 from body38_to_smpl import ZED_BODY_38_TO_SMPL_BODY_24 as map, ZED_BODY_38_TO_SMPL_BODY_24_MIRROR as map_mir
@@ -50,6 +58,7 @@ class SMPLXTracking(Node):
         # self.get_logger().info(f"Model type: {self.model_type}")
         # self.get_logger().info(f"Mirror: {self.mirror}")        
         
+        
         if(os.path.exists(self.model_path) == False):
             self.get_logger().error("Model path does not exist")
             exit(1)
@@ -68,6 +77,7 @@ class SMPLXTracking(Node):
         # Initialize pose and shape parameters
         self.betas = torch.zeros((1, NUM_BETAS)).to(DEVICE)
         self.global_orient = torch.zeros((1, 3)).to(DEVICE)
+        self.gender = 'male'
         if self.model_type == 'smplx':
             self.body_pose = torch.zeros((1, 3 * NUM_BODY_JOINTS)).to(DEVICE)
             self.jaw_pose = torch.zeros((1, 3)).to(DEVICE)
@@ -95,6 +105,8 @@ class SMPLXTracking(Node):
         # Timer for periodic drawing
         self.timer = self.create_timer(0.01, self.draw)
         self.get_logger().info("Tracking node started")
+        
+        self.param_sender = SMPLParamsSender(DEVICE)
     
     @staticmethod
     def quaternion_to_rotvec(quat):
@@ -192,6 +204,12 @@ class SMPLXTracking(Node):
         self.viz.poll_events()
         self.viz.update_renderer()
         
+        # send params to docker
+
+        # self.params.body_pose_axis_angle = torch.cat([self.body_pose, torch.tensor([[0, 0, 0]]).to(self.device), torch.tensor([[0, 0, 0]]).to(self.device)], dim=1)        
+        params = SMPLParams(self.betas, self.gender, self.global_orient, torch.cat([self.body_pose, torch.tensor([[0, 0, 0]]).to(DEVICE), torch.tensor([[0, 0, 0]]).to(DEVICE)], dim=1))
+        self.param_sender.send(params)
+        
         
 def main(args=None):
     rclpy.init(args=args)
@@ -199,23 +217,6 @@ def main(args=None):
     rclpy.spin(node)
     node.destroy_node()
     rclpy.shutdown()
-
-    # import open3d
-    # import numpy as np
-    # import rclpy
-    # def main(args=None):
-    #     rclpy.init(args=args)
-    #     rclpy.shutdown()
-    #     pcd = open3d.geometry.PointCloud()
-    #     np_points = np.random.rand(100000, 3)
-
-    #     # From numpy to Open3D
-    #     pcd.points = open3d.utility.Vector3dVector(np_points)
-
-    #     # From Open3D to numpy
-    #     np_points = np.asarray(pcd.points)
-
-    #     open3d.visualization.draw_geometries([pcd])
-
+    
 if __name__ == '__main__':
     main()
