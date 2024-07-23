@@ -3,7 +3,7 @@ import rclpy
 from rclpy.node import Node
 import numpy as np
 from body_msgs.msg import BodyData
-
+from sensor_msgs.msg import PointCloud2
 import scipy
 import torch
 import torch.utils.dlpack
@@ -12,7 +12,7 @@ import smplx
 import os
 from dataclasses import dataclass
 from smpl_params_sender import SMPLParamsSender
-
+from betas_optmizer import SMPLModelOptimizer
 @dataclass
 class SMPLParams:
     betas: torch.Tensor
@@ -23,6 +23,7 @@ class SMPLParams:
 # Importing required mappings
 from body38_to_smpl import ZED_BODY_38_TO_SMPL_BODY_24 as map, ZED_BODY_38_TO_SMPL_BODY_24_MIRROR as map_mir
 
+from open3d_converter import fromPointCloud2
 # Constants
 NUM_BETAS = 10
 NUM_EXPRESSIONS = 10
@@ -41,12 +42,14 @@ class SMPLXTracking(Node):
         self.get_logger().info("Initializing SMPLX tracking node")
         
         # Subscriber for body tracking data
-        self.create_subscription(BodyData, 'body_tracking_data', self.callback, 10)
+        self.create_subscription(BodyData, 'body_tracking_data', self.callback_bd, 1)
+        self.create_subscription(PointCloud2, 'point_cloud', self.callback_pc, 1)
+
         
         # PARAMS
         self.declare_parameter('model_path', '../models/smplx/SMPLX_MALE.npz')
         self.declare_parameter('model_type', 'smplx')
-        self.declare_parameter('mirror', True)
+        self.declare_parameter('mirror', False)
         
         # Get params from ros parameter
         self.model_path = self.get_parameter('model_path').get_parameter_value().string_value
@@ -99,14 +102,21 @@ class SMPLXTracking(Node):
         opt.show_coordinate_frame = True
         # opt.background_color = np.asarray([0.5, 0.5, 0.5])
         opt.mesh_show_wireframe = True
-        self.first = True
+        self.first_mesh = True
+        self.first_point_cloud = True
         self.mesh = o3d.geometry.TriangleMesh()
+        self.point_cloud = o3d.geometry.PointCloud()
         
         # Timer for periodic drawing
         self.timer = self.create_timer(0.01, self.draw)
         self.get_logger().info("Tracking node started")
         
         self.param_sender = SMPLParamsSender(DEVICE)
+        # self.beta_optimizer = SMPLModelOptimizer(self.model, learning_rate=0.01, num_betas=NUM_BETAS)
+    
+        self.reference_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
+        self.viz.add_geometry(self.reference_frame)
+    
     
     @staticmethod
     def quaternion_to_rotvec(quat):
@@ -128,13 +138,35 @@ class SMPLXTracking(Node):
         return rvec 
     
 
-    def callback(self, msg):
+    def callback_bd(self, msg):
         """Callback for body tracking data."""
         # self.get_logger().info("Received body tracking data")
+        # self.global_position = torch.tensor([[msg.keypoints[0].position.x, msg.keypoints[0].position.y, msg.keypoints[0].position.z]]).to(DEVICE)
+        self.global_position = torch.tensor([[msg.global_position.x, msg.global_position.y, msg.global_position.z]]).to(DEVICE)
+        self.get_logger().info(f"Global position: {self.global_position}")
         global_orientation = self.quaternion_to_rotvec(msg.global_root_orientation)
         self.global_orient[0] = torch.tensor(global_orientation).to(DEVICE)
         self.current_body_pose = msg.keypoints[0].local_orientation_per_joint
 
+    def callback_pc(self, msg):
+        """Callback for point cloud data."""
+        self.get_logger().info("Received point cloud data")
+            
+        fromPointCloud2(self, self.point_cloud, msg)
+
+        if self.first_point_cloud:
+            self.viz.add_geometry(self.point_cloud)
+            self.first_point_cloud = False
+        self.get_logger().error("Point0: {}".format(self.point_cloud.points[0]))
+        
+        if(self.point_cloud.is_empty()):
+            self.get_logger().error("Point cloud is empty")
+            return
+        self.viz.update_geometry(self.point_cloud)
+        self.viz.poll_events()
+        self.viz.update_renderer()
+        
+        
 
     def draw(self):
         # self.get_logger().info("Drawing")
@@ -170,6 +202,7 @@ class SMPLXTracking(Node):
         # forward pass
         if self.model_type == 'smpl':
             output = self.model(
+                transl=self.global_position,
                 betas=self.betas,
                 global_orient=self.global_orient,
                 body_pose=self.body_pose,
@@ -189,6 +222,10 @@ class SMPLXTracking(Node):
                 return_verts=True,
                 return_full_pose=False
             )
+        
+        
+        # self.get_logger().info("SMPLX model forward pass completed")
+        
         vertices = output.vertices[0].detach().cpu().numpy() 
         faces = self.model.faces
 
@@ -196,9 +233,9 @@ class SMPLXTracking(Node):
         self.mesh.triangles = o3d.utility.Vector3iVector(faces)
 
         
-        if self.first:
+        if self.first_mesh:
             self.viz.add_geometry(self.mesh)
-            self.first = False
+            self.first_mesh = False
         
         self.viz.update_geometry(self.mesh)
         self.viz.poll_events()
@@ -210,6 +247,7 @@ class SMPLXTracking(Node):
         params = SMPLParams(self.betas, self.gender, self.global_orient, torch.cat([self.body_pose, torch.tensor([[0, 0, 0]]).to(DEVICE), torch.tensor([[0, 0, 0]]).to(DEVICE)], dim=1))
         self.param_sender.send(params)
         
+        # self.betas_optimizer.optimize(vertices, num_iterations=1000)
         
 def main(args=None):
     rclpy.init(args=args)

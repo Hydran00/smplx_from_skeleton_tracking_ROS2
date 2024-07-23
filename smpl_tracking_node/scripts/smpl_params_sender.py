@@ -17,7 +17,7 @@ class SMPLParamsSender(Node):
             f.write(b'\x00' * (self.size))
     
     def send(self, data):
-        self.get_logger().info("Sending SMPL parameters on mmap")
+        # self.get_logger().info("Sending SMPL parameters on mmap")
         with open(self.file_path, 'r+b') as f:
             mm = mmap.mmap(f.fileno(), self.size)
             data = {
