@@ -1,56 +1,86 @@
+import torch
+from torch import nn
 import numpy as np
-from scipy.spatial import cKDTree
+import open3d as o3d
+
+class ChamferDistance(nn.Module):
+    def forward(self, pc1, pc2):
+        # Ensure both tensors are on the same device
+        device = pc1.device
+        pc2 = pc2.to(device)
+        
+        # Compute pairwise squared distances
+        diff = pc1.unsqueeze(2) - pc2.unsqueeze(1)
+        dist = torch.sum(diff ** 2, dim=-1)
+        
+        # Compute Chamfer Distance
+        dist1 = torch.min(dist, dim=2)[0]
+        dist2 = torch.min(dist, dim=1)[0]
+        
+        return torch.mean(dist1) + torch.mean(dist2)
 
 class SMPLModelOptimizer:
-    def __init__(self, smpl_model, target_point_cloud, learning_rate=0.01, num_betas=10):
+    def __init__(self, smpl_model, learning_rate=0.01, num_betas=10):
         self.smpl_model = smpl_model  # Assumes smpl_model is an instance of a pre-defined SMPL model class
         self.learning_rate = learning_rate
-        self.betas = np.zeros(num_betas)  # Initialize betas to zeros
         self.num_betas = num_betas
 
-    def chamfer_distance(self, pc1, pc2):
-        kdtree1 = cKDTree(pc1)
-        kdtree2 = cKDTree(pc2)
-        distances1, _ = kdtree1.query(pc2)
-        distances2, _ = kdtree2.query(pc1)
-        return np.mean(distances1) + np.mean(distances2)
+        # Ensure betas is a leaf tensor
+        self.betas = torch.zeros((1, num_betas), dtype=torch.float32, requires_grad=True, device='cuda:0')
+        
+        # Define optimizer
+        self.optimizer = torch.optim.Adam([self.betas], lr=self.learning_rate)
+        self.chamfer_distance = ChamferDistance().to('cuda:0')
 
-    def compute_loss(self, generated_point_cloud):
-        return self.chamfer_distance(generated_point_cloud, self.target_point_cloud)
+    def point_cloud_to_tensor(self, point_cloud):
+        # Convert Open3D PointCloud to PyTorch tensor
+        points = np.asarray(point_cloud.points)
+        return torch.tensor(points, dtype=torch.float32, device='cuda:0')
 
-    def compute_gradients(self):
-        # Assuming smpl_model has a method that computes vertices and their gradients w.r.t. betas
-        verts, grad_betas = self.smpl_model(self.betas, return_grad=True)
-        loss = self.compute_loss(verts)
-        gradients = np.zeros(self.num_betas)
+    def optimize(self, target_point_cloud, global_orient, global_position, body_pose, num_iterations=1000):
+        self.target_point_cloud = self.point_cloud_to_tensor(target_point_cloud)
+        self.global_orient = global_orient.to('cuda:0')
+        self.global_position = global_position.to('cuda:0')
+        self.body_pose = body_pose.to('cuda:0')
 
-        for i in range(self.num_betas):
-            # Compute gradient of the loss w.r.t. each beta
-            gradients[i] = np.mean(2 * (verts - self.target_point_cloud) @ grad_betas[:, i])
-
-        return loss, gradients
-
-    def optimize(self, target_point_cloud, num_iterations=1000):
-        self.target_point_cloud = target_point_cloud
         for i in range(num_iterations):
-            loss, gradients = self.compute_gradients()
-            self.betas -= self.learning_rate * gradients
+            self.optimizer.zero_grad()
             
+            output = self.smpl_model(
+                betas=self.betas,
+                global_orient=self.global_orient,
+                body_pose=self.body_pose,
+                transl=self.global_position,
+                return_verts=True
+            )
+
+            generated_point_cloud = output.vertices[0].cpu()  # Move to CPU for Chamfer distance calculation
+            
+            # Move tensors to GPU before calculating loss
+            generated_point_cloud = generated_point_cloud.to('cuda:0')
+            self.target_point_cloud = self.target_point_cloud.to('cuda:0')
+
+            loss = self.chamfer_distance(generated_point_cloud.unsqueeze(0), self.target_point_cloud.unsqueeze(0))
+            
+            loss.backward()
+            self.optimizer.step()
+
             if i % 100 == 0:
-                print(f"Iteration {i}: Loss = {loss}")
+                print(f"Iteration {i}: Loss = {loss.item()}")
                 
         return self.betas
 
 # Example usage
-if __name__ == "__main__":
-    optimizer = SMPLModelOptimizer(smpl_model, target_point_cloud)
-    optimized_betas = optimizer.optimize()
+# if __name__ == "__main__":
+#     smpl_model = YourSMPLModelClass()  # Initialize your SMPL model here
+#     target_point_cloud = o3d.geometry.PointCloud()  # Load your target point cloud here
+#     target_point_cloud.points = o3d.utility.Vector3dVector(np.load("target_point_cloud.npy"))  # Load your point cloud points
 
-    print("Optimized Betas:", optimized_betas)
-# smpl_model = YourSMPLModelClass()  # Initialize your SMPL model here
-# target_point_cloud = np.load("target_point_cloud.npy")  # Load your target point cloud here
+#     optimizer = SMPLModelOptimizer(smpl_model)
+#     global_orient = torch.zeros((1, 3), dtype=torch.float32).to('cuda:0')
+#     global_position = torch.zeros((1, 3), dtype=torch.float32).to('cuda:0')
+#     body_pose = torch.zeros((1, 69), dtype=torch.float32).to('cuda:0')
 
-# optimizer = SMPLModelOptimizer(smpl_model, target_point_cloud)
-# optimized_betas = optimizer.optimize()
+#     optimized_betas = optimizer.optimize(target_point_cloud, global_orient, global_position, body_pose)
 
-# print("Optimized Betas:", optimized_betas)
+#     print("Optimized Betas:", optimized_betas)

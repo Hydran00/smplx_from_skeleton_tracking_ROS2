@@ -27,7 +27,6 @@ from open3d_converter import fromPointCloud2
 # Constants
 NUM_BETAS = 10
 NUM_EXPRESSIONS = 10
-NUM_GLOBAL_ORIENT_JOINTS = 1 # pelvis
 NUM_BODY_JOINTS = 21 # 24 - 3 (pelvis and hands)
 NUM_FACE_JOINTS = 3
 NUM_HAND_JOINTS = 15
@@ -80,6 +79,7 @@ class SMPLXTracking(Node):
         # Initialize pose and shape parameters
         self.betas = torch.zeros((1, NUM_BETAS)).to(DEVICE)
         self.global_orient = torch.zeros((1, 3)).to(DEVICE)
+        self.global_position = torch.zeros((1, 3)).to(DEVICE)
         self.gender = 'male'
         if self.model_type == 'smplx':
             self.body_pose = torch.zeros((1, 3 * NUM_BODY_JOINTS)).to(DEVICE)
@@ -112,11 +112,13 @@ class SMPLXTracking(Node):
         self.get_logger().info("Tracking node started")
         
         self.param_sender = SMPLParamsSender(DEVICE)
-        # self.beta_optimizer = SMPLModelOptimizer(self.model, learning_rate=0.01, num_betas=NUM_BETAS)
-    
+        self.betas_optimizer = SMPLModelOptimizer(self.model, learning_rate=0.01, num_betas=NUM_BETAS)
+        self.betas_optimized = False
+        
         self.reference_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
         self.viz.add_geometry(self.reference_frame)
-    
+        self.positions = []
+        self.spheres = []
     
     @staticmethod
     def quaternion_to_rotvec(quat):
@@ -141,23 +143,26 @@ class SMPLXTracking(Node):
     def callback_bd(self, msg):
         """Callback for body tracking data."""
         # self.get_logger().info("Received body tracking data")
-        # self.global_position = torch.tensor([[msg.keypoints[0].position.x, msg.keypoints[0].position.y, msg.keypoints[0].position.z]]).to(DEVICE)
-        self.global_position = torch.tensor([[msg.global_position.x, msg.global_position.y, msg.global_position.z]]).to(DEVICE)
-        self.get_logger().info(f"Global position: {self.global_position}")
-        global_orientation = self.quaternion_to_rotvec(msg.global_root_orientation)
-        self.global_orient[0] = torch.tensor(global_orientation).to(DEVICE)
+        for i in range(38):
+            if self.first_mesh:
+                self.positions.append([msg.keypoints[i].position.x, msg.keypoints[i].position.y, msg.keypoints[i].position.z])
+            else:
+                self.positions[i] = [msg.keypoints[i].position.x, msg.keypoints[i].position.y, msg.keypoints[i].position.z]
+        self.global_position[0] = torch.tensor([msg.global_position.x, msg.global_position.y +0.3, msg.global_position.z]).to(DEVICE)
+        self.global_orient[0] = torch.tensor(self.quaternion_to_rotvec(msg.global_root_orientation)).to(DEVICE)
         self.current_body_pose = msg.keypoints[0].local_orientation_per_joint
+        # self.get_logger().info(f"Global position: {self.global_position} vs {msg.keypoints[0].position.x}, {msg.keypoints[0].position.y}, {msg.keypoints[0].position.z}")
+        # self.get_logger().info(f"Global orientation: {msg.global_root_orientation.x}, {msg.global_root_orientation.y}, {msg.global_root_orientation.z}, {msg.global_root_orientation.w}")
 
     def callback_pc(self, msg):
         """Callback for point cloud data."""
-        self.get_logger().info("Received point cloud data")
+        # self.get_logger().info("Received point cloud data")
             
         fromPointCloud2(self, self.point_cloud, msg)
 
         if self.first_point_cloud:
             self.viz.add_geometry(self.point_cloud)
             self.first_point_cloud = False
-        self.get_logger().error("Point0: {}".format(self.point_cloud.points[0]))
         
         if(self.point_cloud.is_empty()):
             self.get_logger().error("Point cloud is empty")
@@ -165,6 +170,7 @@ class SMPLXTracking(Node):
         self.viz.update_geometry(self.point_cloud)
         self.viz.poll_events()
         self.viz.update_renderer()
+        pass
         
         
 
@@ -173,6 +179,9 @@ class SMPLXTracking(Node):
         """Draw the SMPLX model with the current pose."""
         if self.current_body_pose is None:
             return
+        
+        
+        
         # add body pose (valid for both smpl and smplx)
         for i in range(NUM_BODY_JOINTS):
             if(self.mirror):
@@ -198,6 +207,15 @@ class SMPLXTracking(Node):
         else:
             # TODO: add hand pose for smplx
             pass
+        
+        if not self.first_mesh and not self.first_point_cloud and not self.betas_optimized:
+            self.get_logger().info("First mesh and point cloud not received yet")
+            self.betas = self.betas_optimizer.optimize(self.point_cloud, 
+                                                       self.global_orient, 
+                                                       self.global_position, 
+                                                       self.body_pose, 
+                                                       num_iterations=1000)
+            self.betas_optimized = True
             
         # forward pass
         if self.model_type == 'smpl':
@@ -211,6 +229,7 @@ class SMPLXTracking(Node):
         else:
             output = self.model(
                 betas=self.betas,
+                transl=self.global_position,
                 global_orient=self.global_orient,
                 body_pose=self.body_pose,
                 jaw_pose=self.jaw_pose,
@@ -235,9 +254,22 @@ class SMPLXTracking(Node):
         
         if self.first_mesh:
             self.viz.add_geometry(self.mesh)
+            
+            # add 21 spheres foreach joint location
+            for i in range(NUM_BODY_JOINTS):
+                sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.02)
+                sphere.compute_vertex_normals()
+                sphere.paint_uniform_color([1, 0, 0])
+                sphere.translate(self.positions[map_mir[i+1]], relative=False)
+                self.spheres.append(sphere)
+                self.viz.add_geometry(sphere)
             self.first_mesh = False
-        
+            return
+
         self.viz.update_geometry(self.mesh)
+        for i in range(NUM_BODY_JOINTS):
+            self.spheres[i].translate(self.positions[map_mir[i+1]], relative=False)
+            self.viz.update_geometry(self.spheres[i])
         self.viz.poll_events()
         self.viz.update_renderer()
         
@@ -247,7 +279,6 @@ class SMPLXTracking(Node):
         params = SMPLParams(self.betas, self.gender, self.global_orient, torch.cat([self.body_pose, torch.tensor([[0, 0, 0]]).to(DEVICE), torch.tensor([[0, 0, 0]]).to(DEVICE)], dim=1))
         self.param_sender.send(params)
         
-        # self.betas_optimizer.optimize(vertices, num_iterations=1000)
         
 def main(args=None):
     rclpy.init(args=args)
