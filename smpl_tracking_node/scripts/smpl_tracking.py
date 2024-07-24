@@ -37,7 +37,7 @@ DEVICE = torch.device('cuda') if torch.cuda.is_available() else torch.device('cp
 
 class SMPLXTracking(Node):
     def __init__(self):
-        super().__init__('pose_depth_estimator')
+        super().__init__('SMPLX_tracking')
         self.get_logger().info("Initializing SMPLX tracking node")
         
         # Subscriber for body tracking data
@@ -111,8 +111,9 @@ class SMPLXTracking(Node):
         self.timer = self.create_timer(0.01, self.draw)
         self.get_logger().info("Tracking node started")
         
+        
         self.param_sender = SMPLParamsSender(DEVICE)
-        self.betas_optimizer = SMPLModelOptimizer(self.model, learning_rate=0.01, num_betas=NUM_BETAS)
+        self.betas_optimizer = SMPLModelOptimizer(self.model, learning_rate=0.1, num_betas=NUM_BETAS)
         self.betas_optimized = False
         
         self.reference_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
@@ -148,7 +149,7 @@ class SMPLXTracking(Node):
                 self.positions.append([msg.keypoints[i].position.x, msg.keypoints[i].position.y, msg.keypoints[i].position.z])
             else:
                 self.positions[i] = [msg.keypoints[i].position.x, msg.keypoints[i].position.y, msg.keypoints[i].position.z]
-        self.global_position[0] = torch.tensor([msg.global_position.x, msg.global_position.y +0.3, msg.global_position.z]).to(DEVICE)
+        self.global_position[0] = torch.tensor([msg.global_position.x, msg.global_position.y, msg.global_position.z]).to(DEVICE)
         self.global_orient[0] = torch.tensor(self.quaternion_to_rotvec(msg.global_root_orientation)).to(DEVICE)
         self.current_body_pose = msg.keypoints[0].local_orientation_per_joint
         # self.get_logger().info(f"Global position: {self.global_position} vs {msg.keypoints[0].position.x}, {msg.keypoints[0].position.y}, {msg.keypoints[0].position.z}")
@@ -210,11 +211,12 @@ class SMPLXTracking(Node):
         
         if not self.first_mesh and not self.first_point_cloud and not self.betas_optimized:
             self.get_logger().info("First mesh and point cloud not received yet")
-            self.betas = self.betas_optimizer.optimize(self.point_cloud, 
+            self.betas = self.betas_optimizer.optimize(self.get_logger(),
+                                                       self.point_cloud, 
                                                        self.global_orient, 
                                                        self.global_position, 
                                                        self.body_pose, 
-                                                       num_iterations=1000)
+                                                       num_iterations=200)
             self.betas_optimized = True
             
         # forward pass

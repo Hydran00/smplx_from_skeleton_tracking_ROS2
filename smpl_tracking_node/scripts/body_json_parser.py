@@ -81,7 +81,6 @@ class ParseBodyJson(Node):
                 keypoint_msg.local_position_per_joint = [self.vector3_from_dict(lp) for lp in body['local_position_per_joint']]
                 keypoint_msg.local_orientation_per_joint = [self.quaternion_from_dict(lo) for lo in body['local_orientation_per_joint']]
                 body_msg.keypoints.append(keypoint_msg)
-            print("pub")
             self.publisher_.publish(body_msg)
 
     @staticmethod
