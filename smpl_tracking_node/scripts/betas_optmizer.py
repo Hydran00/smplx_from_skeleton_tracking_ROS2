@@ -5,6 +5,8 @@ import open3d as o3d
 from tqdm import tqdm
 import sys, os, pickle
 import time
+import torch.nn.functional as F
+from chamferdist import ChamferDistance
 
 class LandmarkLoss(nn.Module):
     def __init__(self):
@@ -22,22 +24,7 @@ class LandmarkLoss(nn.Module):
         """
 
         return torch.sum((scan_landmarks - template_landmarks)**2)
-    
-class ChamferDistance(nn.Module):
-    def forward(self, pc1, pc2):
-        # Ensure both tensors are on the same device
-        device = pc1.device
-        pc2 = pc2.to(device)
-        
-        # Compute pairwise squared distances
-        diff = pc1.unsqueeze(2) - pc2.unsqueeze(1)
-        dist = torch.sum(diff ** 2, dim=-1)
-        
-        # Compute Chamfer Distance
-        dist1 = torch.min(dist, dim=2)[0]
-        dist2 = torch.min(dist, dim=1)[0]
-        
-        return torch.mean(dist1) + torch.mean(dist2)
+
 # PRIOR LOSS - FROM SMPLify paper
 class MaxMixturePrior(nn.Module):
 
@@ -175,7 +162,6 @@ class MaxMixturePrior(nn.Module):
 class SMPLModelOptimizer:
     def __init__(self, smpl_model, learning_rate=0.01, num_betas=10):
         self.smpl_model = smpl_model  # Assumes smpl_model is an instance of a pre-defined SMPL model class
-        self.learning_rate = learning_rate
         self.num_betas = num_betas
 
         # Ensure betas is a leaf tensor
@@ -185,8 +171,12 @@ class SMPLModelOptimizer:
         self.chamfer_distance = ChamferDistance().to('cuda:0')
         self.prior = MaxMixturePrior(prior_folder=os.path.expanduser('~')+'/models/prior', num_gaussians=8).to('cuda:0')
         self.landmark_loss = LandmarkLoss().to('cuda:0')
+        self.mesh = o3d.geometry.TriangleMesh()
         self.sphere_list = []
         self.target_sphere_list = []
+        
+        self.viz = o3d.visualization.Visualizer()
+
         
     def point_cloud_to_tensor(self, point_cloud):
         if isinstance(point_cloud, torch.Tensor):
@@ -202,44 +192,37 @@ class SMPLModelOptimizer:
     def compute_loss(self, type, generated_point_cloud, landmarks=None):
         generated_point_cloud_tensor = self.point_cloud_to_tensor(generated_point_cloud).to('cuda:0')
         
+        if type == "transl":
+            data_loss = self.chamfer_distance(self.target_point_cloud_tensor.unsqueeze(0), generated_point_cloud_tensor.unsqueeze(0), reverse=True)
+            # landmark_loss = self.landmark_loss(landmarks, self.target_landmarks)
+            return data_loss
         
         if type == "pose":
             landmark_loss = self.landmark_loss(landmarks, self.target_landmarks)
-            data_loss = self.chamfer_distance(generated_point_cloud_tensor.unsqueeze(0), self.target_point_cloud_tensor.unsqueeze(0))
             prior_loss = self.prior.forward(self.body_pose, self.betas)
-            return 1* landmark_loss  + 0.1 * data_loss + 0.01 * prior_loss
+            return 0.1 * landmark_loss #+ 0.01 * prior_loss
         
         elif type == "shape":
             prior_loss = self.prior.forward(self.body_pose, self.betas)
             beta_loss = (self.betas**2).mean()
-            data_loss = self.chamfer_distance(generated_point_cloud_tensor.unsqueeze(0), self.target_point_cloud_tensor.unsqueeze(0))
-            return 1 * prior_loss + 0.1 * beta_loss + 0.1 * data_loss
+            data_loss = self.chamfer_distance(generated_point_cloud_tensor.unsqueeze(0), self.target_point_cloud_tensor.unsqueeze(0), reverse=True)
+            return 1 * prior_loss + 1 * beta_loss + 1 * data_loss
             
 
-    def optimize(self, logger, target_point_cloud, global_orient, global_position, body_pose, landmarks, num_iterations=1000):
-        self.target_point_cloud_tensor = self.point_cloud_to_tensor(target_point_cloud).to('cuda:0')
-        self.global_orient = global_orient.to('cuda:0')
-        self.global_position = global_position.to('cuda:0')
-        self.target_landmarks = landmarks.to('cuda:0')
-        
-        # init body pose
-        self.body_pose = body_pose.to('cuda:0').detach().requires_grad_()
 
-        # Initialize visualizer
-        self.target_point_cloud = target_point_cloud
-        self.viz = o3d.visualization.Visualizer()
-        self.viz.create_window()
-        opt = self.viz.get_render_option()
-        opt.mesh_show_wireframe = True
-        self.mesh = o3d.geometry.TriangleMesh()
-        self.viz.add_geometry(self.target_point_cloud)
 
-        # Define optimizer for the body pose
-        self.optimizer = torch.optim.Adam([self.body_pose], lr=self.learning_rate)
 
-        for i in tqdm(range(num_iterations)):
-            self.optimizer.zero_grad()
-            
+
+    def optimize(self, logger, params=[], lr=0.01, loss_type='all', num_iterations=1000, landmarks=None):
+        """
+        Optimizes the parameters of the model
+
+        :param params: (list) list of parameters to optimize
+        """
+
+        optimizer = torch.optim.Adam(params, lr)
+        for i in range(num_iterations):
+            optimizer.zero_grad()
             output = self.smpl_model(
                 betas=self.betas,
                 global_orient=self.global_orient,
@@ -247,34 +230,45 @@ class SMPLModelOptimizer:
                 transl=self.global_position,
                 return_verts=True
             )
-
             landmarks = output.joints.to('cuda:0')  # Move landmarks to GPU
-            landmarks = landmarks[:, :22, :].reshape(1, 66)
-
-
+            landmarks = landmarks[:, :24, :].reshape(1, 72)
+            
             self.mesh.vertices = o3d.utility.Vector3dVector(output.vertices[0].cpu().detach().numpy())
             self.mesh.triangles = o3d.utility.Vector3iVector(self.smpl_model.faces)
             
+            
+            loss = self.compute_loss(loss_type, output.vertices[0].cpu(), landmarks)
+            loss.backward()
+            optimizer.step()
+            logger.info(f"Iteration {i}: Loss = {loss.item()}")
+            if i % 50 == 0:
+                logger.info(f"Iteration {i}: Loss = {loss.item()}")
+
+            if i == 0:
+                self.viz.add_geometry(self.mesh)
+            else:
+                self.viz.update_geometry(self.mesh)
+
             # create a sphere for each landmark
-            for j in range(22):
+            for j in range(24):
                 if i == 0:
                     sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.02)
                     sphere_target = o3d.geometry.TriangleMesh.create_sphere(radius=0.02)
 
                     sphere.compute_vertex_normals()
                     sphere_target.compute_vertex_normals()
-                    
+
                     random_color = np.random.rand(3)
-                    
+
                     sphere.paint_uniform_color(random_color)
                     sphere_target.paint_uniform_color(random_color)
-                    
+
                     position = landmarks[0, j*3:j*3+3].cpu().detach().numpy()
                     position_target = self.target_landmarks[0, j*3:j*3+3].cpu().detach().numpy()
-                    
+
                     sphere.translate(position, relative=False)
                     sphere_target.translate(position_target, relative=False)
-                    
+
                     self.viz.add_geometry(sphere)
                     self.sphere_list.append(sphere)
                     self.viz.add_geometry(sphere_target)
@@ -284,64 +278,43 @@ class SMPLModelOptimizer:
                     self.viz.update_geometry(self.sphere_list[j])
                     self.viz.update_geometry(self.target_sphere_list[j])
             
-            if i == 0:
-                self.viz.add_geometry(self.mesh)
-            else:
-                self.viz.update_geometry(self.mesh)
-            
-            # sleep for 10 seconds
-            # time_now = time.time()
-            # while time.time() - time_now < 0.2:
             self.viz.poll_events()
             self.viz.update_renderer()
-            
-            
-            generated_point_cloud = output.vertices[0].cpu()  # Move to CPU for Chamfer distance calculation
-            
-
-            loss = self.compute_loss("pose", generated_point_cloud, landmarks)            
-            loss.backward()
-            
-            self.optimizer.step()
-            if i % 50 == 0:
-                logger.info(f"Iteration {i}: Loss = {loss.item()}")
         
-        logger.info("Optimization of pose complete, now optimizing betas")
-
-        # Define optimizer for the betas
-        self.optimizer = torch.optim.Adam([self.betas], lr=self.learning_rate)
-        for i in tqdm(range(num_iterations)):
-            self.optimizer.zero_grad()
-            
-            output = self.smpl_model(
-                betas=self.betas,
-                global_orient=self.global_orient,
-                body_pose=self.body_pose,
-                transl=self.global_position,
-                return_verts=True
-            )
-
-            self.mesh.vertices = o3d.utility.Vector3dVector(output.vertices[0].cpu().detach().numpy())
-            self.mesh.triangles = o3d.utility.Vector3iVector(self.smpl_model.faces)
-
-            self.viz.update_geometry(self.mesh)
-
-            self.viz.poll_events()
-            self.viz.update_renderer()
-            
-            
-            generated_point_cloud = output.vertices[0].cpu()  # Move to CPU for Chamfer distance calculation
-            loss = self.compute_loss("shape", generated_point_cloud)
-            loss.backward()
-            
-            self.optimizer.step()
-            if i % 50 == 0:
-                logger.info(f"SHAPE: Iteration {i}: Loss = {loss.item()}")
-        
-        # Close the visualizer
-        self.viz.destroy_window()
+        self.viz.clear_geometries()
+        self.sphere_list = []
+        self.target_sphere_list = []
         
         return self.betas, self.body_pose
+
+
+
+
+
+    def optimize_model(self, logger, target_point_cloud, global_orient, global_position, body_pose, landmarks):
+
+        self.target_point_cloud_tensor = self.point_cloud_to_tensor(target_point_cloud).to('cuda:0')
+        self.global_orient = global_orient.to('cuda:0').detach().requires_grad_()
+        self.global_position = global_position.to('cuda:0').detach().requires_grad_()
+        self.body_pose = body_pose.to('cuda:0').detach().requires_grad_()
+        self.target_landmarks = landmarks.to('cuda:0')
+        
+
+        # Initialize visualizer
+        self.target_point_cloud = target_point_cloud
+        
+        self.viz.create_window()
+        opt = self.viz.get_render_option()
+        opt.mesh_show_wireframe = True
+        
+        self.viz.add_geometry(self.target_point_cloud)
+
+        self.optimize(logger, params=[self.global_position, self.global_orient], loss_type='transl', num_iterations=200)
+        self.optimize(logger, params=[self.body_pose], lr=0.001, loss_type='pose', num_iterations=200)
+        self.optimize(logger, params=[self.betas], lr=0.001, loss_type='shape', num_iterations=50)
+
+        
+        return self.betas, self.body_pose, self.global_position
 
 # Example usage
 # if __name__ == "__main__":

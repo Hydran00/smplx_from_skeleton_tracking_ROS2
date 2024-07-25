@@ -102,7 +102,7 @@ class SMPLXTracking(Node):
             # smpl has 23 body params (21 + 2 hands)
             self.body_pose = torch.zeros((1, 3 * NUM_BODY_JOINTS + 3 * 2)).to(DEVICE)
         self.current_body_pose = None 
-        self.landmarks = torch.zeros((1, 3 * (NUM_BODY_JOINTS+1))).to(DEVICE)    
+        self.landmarks = torch.zeros((1, 3 * (NUM_BODY_JOINTS+3))).to(DEVICE)    
 
         # Open3D visualization setup
         self.viz = o3d.visualization.Visualizer()
@@ -153,7 +153,7 @@ class SMPLXTracking(Node):
     def callback_bd(self, msg):
         """Callback for body tracking data."""
         # self.get_logger().info("Received body tracking data")
-        for i in range(NUM_BODY_JOINTS+1):
+        for i in range(NUM_BODY_JOINTS+3):
                 self.landmarks[0][i*3] = msg.keypoints[self.map[i]].position.x
                 self.landmarks[0][i*3 + 1] = msg.keypoints[self.map[i]].position.y
                 self.landmarks[0][i*3 + 2] = msg.keypoints[self.map[i]].position.z
@@ -217,15 +217,15 @@ class SMPLXTracking(Node):
             pass
         
         if not self.first_mesh and not self.first_point_cloud and not self.betas_optimized and OPTIMIZE_BETAS:
-            self.get_logger().info("Optimizing betas") 
+            self.get_logger().info("Optimizing params") 
 
-            self.betas, self.body_pose = self.betas_optimizer.optimize(self.get_logger(),
+            self.betas, self.body_pose, self.global_position = self.betas_optimizer.optimize_model(
+                                                        self.get_logger(),
                                                        self.point_cloud, 
                                                        self.global_orient, 
                                                        self.global_position, 
                                                        self.body_pose,
-                                                       self.landmarks,
-                                                       num_iterations=100)
+                                                       self.landmarks)
             self.betas_optimized = True
             
         # forward pass
