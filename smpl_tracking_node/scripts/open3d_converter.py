@@ -39,7 +39,6 @@ def fromPointCloud2(node, buffer, ros_cloud):
     # if len(cloud_data)> old_max:
     #     # extract randomly 10k points
     # filtered_data_idx = np.random.choice(len(cloud_data), min(10000, len(cloud_data)), replace=False)
-    print("len(cloud_data):", len(cloud_data))
     filtered_data_idx = np.random.choice(len(cloud_data), min(len(cloud_data),MAX_POINTS), replace=False)
     #     old_max = len(cloud_data)
     

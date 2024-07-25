@@ -1,3 +1,5 @@
 geometry_msgs/Vector3 global_position
 geometry_msgs/Quaternion global_root_orientation
+geometry_msgs/Vector3[] local_position_per_joint
+geometry_msgs/Quaternion[] local_orientation_per_joint
 Keypoint[] keypoints

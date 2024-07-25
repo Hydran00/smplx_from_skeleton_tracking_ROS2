@@ -80,7 +80,7 @@ class SMPLParamsSender(Node):
             mesh.triangles = o3d.utility.Vector3iVector(output.faces)
 
             # rotate the mesh 180 on y  axis on local coordinate
-            mesh = mesh.rotate(mesh.get_rotation_matrix_from_xyz((0, np.pi, 0)))
+            # mesh = mesh.rotate(mesh.get_rotation_matrix_from_xyz((0, np.pi, 0)))
 
 
 
