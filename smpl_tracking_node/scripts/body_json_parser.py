@@ -81,6 +81,8 @@ class ParseBodyJson(Node):
                 keypoint_msg = Keypoint()
                 keypoint_msg.position = self.vector3_from_dict(kp)
                 body_msg.keypoints.append(keypoint_msg)
+                
+            # self.get_logger().info(f"POS: {body_msg.global_position} vs {body_msg.keypoints[0].position}")
             self.publisher_.publish(body_msg)
 
     @staticmethod

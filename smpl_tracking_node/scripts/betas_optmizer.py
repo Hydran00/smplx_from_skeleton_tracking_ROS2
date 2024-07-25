@@ -177,7 +177,32 @@ class SMPLModelOptimizer:
         
         self.viz = o3d.visualization.Visualizer()
 
+    def optimize_model(self, logger, target_point_cloud, global_orient, global_position, body_pose, landmarks):
+
+        self.target_point_cloud_tensor = self.point_cloud_to_tensor(target_point_cloud).to('cuda:0')
+        self.global_orient = global_orient.to('cuda:0').detach().requires_grad_()
+        self.global_position = global_position.to('cuda:0').detach().requires_grad_()
+        self.body_pose = body_pose.to('cuda:0').detach().requires_grad_()
+        self.target_landmarks = landmarks.to('cuda:0')
         
+
+        # Initialize visualizer
+        self.target_point_cloud = target_point_cloud
+        
+        self.viz.create_window()
+        opt = self.viz.get_render_option()
+        opt.mesh_show_wireframe = True
+        
+        self.viz.add_geometry(self.target_point_cloud)
+
+        # OPTIMIZING 
+        # self.optimize(logger, params=[self.global_position, self.global_orient], loss_type='transl', num_iterations=200)
+        self.optimize(logger, params=[self.body_pose], lr=0.001, loss_type='pose', num_iterations=200)
+        self.optimize(logger, params=[self.betas], lr=0.001, loss_type='shape', num_iterations=50)
+
+        
+        return self.betas, self.body_pose, self.global_position
+    
     def point_cloud_to_tensor(self, point_cloud):
         if isinstance(point_cloud, torch.Tensor):
             return point_cloud
@@ -207,10 +232,6 @@ class SMPLModelOptimizer:
             beta_loss = (self.betas**2).mean()
             data_loss = self.chamfer_distance(generated_point_cloud_tensor.unsqueeze(0), self.target_point_cloud_tensor.unsqueeze(0), reverse=True)
             return 1 * prior_loss + 1 * beta_loss + 1 * data_loss
-            
-
-
-
 
 
     def optimize(self, logger, params=[], lr=0.01, loss_type='all', num_iterations=1000, landmarks=None):
@@ -288,33 +309,6 @@ class SMPLModelOptimizer:
         return self.betas, self.body_pose
 
 
-
-
-
-    def optimize_model(self, logger, target_point_cloud, global_orient, global_position, body_pose, landmarks):
-
-        self.target_point_cloud_tensor = self.point_cloud_to_tensor(target_point_cloud).to('cuda:0')
-        self.global_orient = global_orient.to('cuda:0').detach().requires_grad_()
-        self.global_position = global_position.to('cuda:0').detach().requires_grad_()
-        self.body_pose = body_pose.to('cuda:0').detach().requires_grad_()
-        self.target_landmarks = landmarks.to('cuda:0')
-        
-
-        # Initialize visualizer
-        self.target_point_cloud = target_point_cloud
-        
-        self.viz.create_window()
-        opt = self.viz.get_render_option()
-        opt.mesh_show_wireframe = True
-        
-        self.viz.add_geometry(self.target_point_cloud)
-
-        self.optimize(logger, params=[self.global_position, self.global_orient], loss_type='transl', num_iterations=200)
-        self.optimize(logger, params=[self.body_pose], lr=0.001, loss_type='pose', num_iterations=200)
-        self.optimize(logger, params=[self.betas], lr=0.001, loss_type='shape', num_iterations=50)
-
-        
-        return self.betas, self.body_pose, self.global_position
 
 # Example usage
 # if __name__ == "__main__":

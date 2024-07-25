@@ -33,7 +33,7 @@ NUM_BODY_JOINTS = 21 # 24 - 3 (transl/pelvis and hands)
 NUM_FACE_JOINTS = 3
 NUM_HAND_JOINTS = 15
 
-OPTIMIZE_BETAS = True
+OPTIMIZE_BETAS = False
 
 # Device configuration
 DEVICE = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
@@ -158,7 +158,9 @@ class SMPLXTracking(Node):
                 self.landmarks[0][i*3 + 1] = msg.keypoints[self.map[i]].position.y
                 self.landmarks[0][i*3 + 2] = msg.keypoints[self.map[i]].position.z
                 
-        self.global_position[0] = torch.tensor([msg.global_position.x, msg.global_position.y + 0.3, msg.global_position.z]).to(DEVICE)
+        # SMPL translation seems to be defined with respect to the SPINE_2
+        self.global_position[0] = torch.tensor([msg.keypoints[2].position.x, msg.keypoints[2].position.y , msg.keypoints[2].position.z]).to(DEVICE)
+        
         self.global_orient[0] = torch.tensor(self.quaternion_to_rotvec(msg.global_root_orientation)).to(DEVICE)
         self.current_body_pose = msg.local_orientation_per_joint
         
@@ -264,8 +266,6 @@ class SMPLXTracking(Node):
         
         if self.first_mesh:
             self.viz.add_geometry(self.mesh)
-            
-            
             
             # add 21 spheres foreach joint location
             # for i in range(NUM_BODY_JOINTS):
