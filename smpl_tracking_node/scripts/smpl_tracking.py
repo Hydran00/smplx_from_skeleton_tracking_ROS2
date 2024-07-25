@@ -33,7 +33,7 @@ NUM_BODY_JOINTS = 21 # 24 - 3 (transl/pelvis and hands)
 NUM_FACE_JOINTS = 3
 NUM_HAND_JOINTS = 15
 
-OPTIMIZE_BETAS = True
+OPTIMIZE_BETAS = False
 
 # Device configuration
 DEVICE = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
@@ -129,6 +129,7 @@ class SMPLXTracking(Node):
         # self.reference_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
         # self.viz.add_geometry(self.reference_frame)
         self.spheres = []
+        self.spheres_smpl = []
     
     @staticmethod
     def quaternion_to_rotvec(quat):
@@ -188,13 +189,11 @@ class SMPLXTracking(Node):
         
 
     def draw(self):
-        self.get_logger().info("Drawing")
+        # self.get_logger().info("Drawing")
         """Draw the SMPLX model with the current pose."""
         if self.current_body_pose is None:
             return
-        
-        
-        
+
         # add body pose (valid for both smpl and smplx)
         for i in range(NUM_BODY_JOINTS):
             rvec = self.quaternion_to_rotvec(self.current_body_pose[self.map[i+1]])
@@ -229,7 +228,7 @@ class SMPLXTracking(Node):
                                                        self.body_pose,
                                                        self.landmarks)
             self.betas_optimized = True
-            
+
         # forward pass
         if self.model_type == 'smpl':
             output = self.model(
@@ -254,8 +253,8 @@ class SMPLXTracking(Node):
                 return_verts=True,
                 return_full_pose=False
             )
-        
-        
+
+
         # self.get_logger().info("SMPLX model forward pass completed")
         
         vertices = output.vertices[0].detach().cpu().numpy() 
@@ -264,25 +263,35 @@ class SMPLXTracking(Node):
         self.mesh.vertices = o3d.utility.Vector3dVector(vertices)
         self.mesh.triangles = o3d.utility.Vector3iVector(faces)        
         
+        landmarks_smpl = output.joints.detach().cpu().numpy()
+        landmarks_smpl = landmarks_smpl[:, :24, :].reshape(1, 72)
         if self.first_mesh:
             self.viz.add_geometry(self.mesh)
             
             # add 21 spheres foreach joint location
-            # for i in range(NUM_BODY_JOINTS):
-            #     sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.02)
-            #     sphere.compute_vertex_normals()
-            #     sphere.paint_uniform_color([1, 0, 0])
-            #     sphere.translate(self.landmarks[map_mir[i+1]], relative=False)
-            #     self.spheres.append(sphere)
-            #     self.viz.add_geometry(sphere)
+            for i in range(NUM_BODY_JOINTS):
+                sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.03)
+                sphere_smpl = o3d.geometry.TriangleMesh.create_sphere(radius=0.03)
+                sphere.compute_vertex_normals()
+                sphere_smpl.compute_vertex_normals()
+                sphere.paint_uniform_color([0, 1, 0])
+                sphere_smpl.paint_uniform_color([1, 0, 0])
+                sphere.translate(self.landmarks[0][i*3:i*3+3].detach().cpu().numpy(), relative=False)
+                sphere_smpl.translate(landmarks_smpl[0][i*3:i*3+3], relative=False)
+                self.spheres.append(sphere)
+                self.spheres_smpl.append(sphere_smpl)
+                self.viz.add_geometry(sphere)
+                self.viz.add_geometry(sphere_smpl)
             self.first_mesh = False
             self.get_logger().info("First mesh received")
         else:
             self.viz.update_geometry(self.mesh)
             
-            # for i in range(NUM_BODY_JOINTS):
-            #     self.spheres[i].translate(self.landmarks[map_mir[i+1]], relative=False)
-            #     self.viz.update_geometry(self.spheres[i])
+            for i in range(NUM_BODY_JOINTS):
+                self.spheres[i].translate(self.landmarks[0][i*3:i*3+3].detach().cpu().numpy(), relative=False)
+                self.spheres_smpl[i].translate(landmarks_smpl[0][i*3:i*3+3], relative=False)
+                self.viz.update_geometry(self.spheres[i])
+                self.viz.update_geometry(self.spheres_smpl[i])
 
         
         # send params to docker
