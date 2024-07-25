@@ -12,7 +12,7 @@ import smplx
 import os
 from dataclasses import dataclass
 from smpl_params_sender import SMPLParamsSender
-from betas_optmizer import SMPLModelOptimizer
+from smpl_optmizer import SMPLModelOptimizer
 import time
 @dataclass
 class SMPLParams:
@@ -33,7 +33,7 @@ NUM_BODY_JOINTS = 21 # 24 - 3 (transl/pelvis and hands)
 NUM_FACE_JOINTS = 3
 NUM_HAND_JOINTS = 15
 
-OPTIMIZE_BETAS = False
+OPTIMIZE_BETAS = True
 
 # Device configuration
 DEVICE = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')

@@ -13,19 +13,9 @@ class LandmarkLoss(nn.Module):
         super(LandmarkLoss, self).__init__()
 
     def forward(self,scan_landmarks,template_landmarks):
-        """
-        summed L2 norm between scan_landmarks and template_landmarks
-
-        :param scan_landmarks: (torch.tensor) dim (N,3)
-        :param template_landmarks: (torch.tensor) dim (N,3)
-
-        return: (float) summed L2 norm between scan_landmarks and 
-                        template_landmarks
-        """
-
         return torch.sum((scan_landmarks - template_landmarks)**2)
 
-# PRIOR LOSS - FROM SMPLify paper
+# FROM SMPLify paper
 class MaxMixturePrior(nn.Module):
 
     def __init__(self, prior_folder='prior',
@@ -196,8 +186,8 @@ class SMPLModelOptimizer:
         self.viz.add_geometry(self.target_point_cloud)
 
         # OPTIMIZING 
-        # self.optimize(logger, params=[self.global_position, self.global_orient], loss_type='transl', num_iterations=200)
-        self.optimize(logger, params=[self.body_pose], lr=0.001, loss_type='pose', num_iterations=200)
+        self.optimize(logger, params=[self.global_position, self.global_orient], loss_type='transl', num_iterations=500)
+        self.optimize(logger, params=[self.body_pose], lr=0.001, loss_type='pose', num_iterations=500)
         self.optimize(logger, params=[self.betas], lr=0.001, loss_type='shape', num_iterations=50)
 
         
