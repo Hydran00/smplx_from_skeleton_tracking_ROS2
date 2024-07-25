@@ -32,6 +32,6 @@ def generate_launch_description():
         ]
     )
     
-    ld.add_action(parser)
+    # ld.add_action(parser)
     ld.add_action(tracking_node)
     return ld

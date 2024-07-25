@@ -231,6 +231,10 @@ class SMPLModelOptimizer:
             if i % 50 == 0:
                 logger.info(f"Iteration {i}: Loss = {loss.item()}")
             # tqdm.write(f"Iteration {i}: Loss = {loss.item()}")   
+        # Close the visualizer
+        self.viz.destroy_window()
+        
+        
         return self.betas
 
 # Example usage
