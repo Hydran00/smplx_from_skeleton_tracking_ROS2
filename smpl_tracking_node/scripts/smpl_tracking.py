@@ -33,7 +33,7 @@ NUM_BODY_JOINTS = 21 # 24 - 3 (transl/pelvis and hands)
 NUM_FACE_JOINTS = 3
 NUM_HAND_JOINTS = 15
 
-OPTIMIZE_BETAS = False
+OPTIMIZE_BETAS = True
 
 # Device configuration
 DEVICE = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
@@ -269,29 +269,28 @@ class SMPLXTracking(Node):
             self.viz.add_geometry(self.mesh)
             
             # add 21 spheres foreach joint location
-            for i in range(NUM_BODY_JOINTS):
-                sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.03)
-                sphere_smpl = o3d.geometry.TriangleMesh.create_sphere(radius=0.03)
-                sphere.compute_vertex_normals()
-                sphere_smpl.compute_vertex_normals()
-                sphere.paint_uniform_color([0, 1, 0])
-                sphere_smpl.paint_uniform_color([1, 0, 0])
-                sphere.translate(self.landmarks[0][i*3:i*3+3].detach().cpu().numpy(), relative=False)
-                sphere_smpl.translate(landmarks_smpl[0][i*3:i*3+3], relative=False)
-                self.spheres.append(sphere)
-                self.spheres_smpl.append(sphere_smpl)
-                self.viz.add_geometry(sphere)
-                self.viz.add_geometry(sphere_smpl)
+            # for i in range(NUM_BODY_JOINTS):
+            #     sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.03)
+            #     sphere_smpl = o3d.geometry.TriangleMesh.create_sphere(radius=0.03)
+            #     sphere.compute_vertex_normals()
+            #     sphere_smpl.compute_vertex_normals()
+            #     sphere.paint_uniform_color([0, 1, 0])
+            #     sphere_smpl.paint_uniform_color([1, 0, 0])
+            #     sphere.translate(self.landmarks[0][i*3:i*3+3].detach().cpu().numpy(), relative=False)
+            #     sphere_smpl.translate(landmarks_smpl[0][i*3:i*3+3], relative=False)
+            #     self.spheres.append(sphere)
+            #     self.spheres_smpl.append(sphere_smpl)
+            #     self.viz.add_geometry(sphere)
+            #     self.viz.add_geometry(sphere_smpl)
             self.first_mesh = False
             self.get_logger().info("First mesh received")
         else:
             self.viz.update_geometry(self.mesh)
-            
-            for i in range(NUM_BODY_JOINTS):
-                self.spheres[i].translate(self.landmarks[0][i*3:i*3+3].detach().cpu().numpy(), relative=False)
-                self.spheres_smpl[i].translate(landmarks_smpl[0][i*3:i*3+3], relative=False)
-                self.viz.update_geometry(self.spheres[i])
-                self.viz.update_geometry(self.spheres_smpl[i])
+            # for i in range(NUM_BODY_JOINTS):
+            #     self.spheres[i].translate(self.landmarks[0][i*3:i*3+3].detach().cpu().numpy(), relative=False)
+            #     self.spheres_smpl[i].translate(landmarks_smpl[0][i*3:i*3+3], relative=False)
+            #     self.viz.update_geometry(self.spheres[i])
+            #     self.viz.update_geometry(self.spheres_smpl[i])
 
         
         # send params to docker
@@ -308,6 +307,8 @@ class SMPLXTracking(Node):
             self.param_sender.send(params)
             if(self.first_skel_mesh):
                 self.skel_mesh = o3d.geometry.TriangleMesh()
+                self.viz.poll_events()
+                self.viz.update_renderer()
                 self.param_sender.receive_skel(self.skel_mesh)
                 self.viz.add_geometry(self.skel_mesh)
                 self.first_skel_mesh = False

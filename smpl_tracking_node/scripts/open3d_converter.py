@@ -7,7 +7,7 @@ import struct
 from ctypes import *
 
 
-MAX_POINTS = 20000
+MAX_POINTS = 50000
 # The data structure of each point in ros PointCloud2: 16 bits = x + y + z + rgb
 FIELDS_XYZ = [
     PointField(name='x', offset=0, datatype=PointField.FLOAT32, count=1),
