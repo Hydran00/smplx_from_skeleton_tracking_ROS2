@@ -24,9 +24,10 @@ class SMPLModelOptimizer:
         self.sphere_list = []
         self.target_sphere_list = []
         
-        self.viz = o3d.visualization.Visualizer()
+        # self.viz = o3d.visualization.Visualizer()
 
-    def optimize_model(self, logger, target_point_cloud, global_orient, global_position, body_pose, landmarks):
+    def optimize_model(self, logger, target_point_cloud, global_orient, global_position, body_pose, landmarks,viz):
+        self.viz = viz
 
         self.target_point_cloud_tensor = self.point_cloud_to_tensor(target_point_cloud).to('cuda:0')
         self.global_orient = global_orient.to('cuda:0').detach().requires_grad_()
@@ -34,21 +35,17 @@ class SMPLModelOptimizer:
         self.body_pose = body_pose.to('cuda:0').detach().requires_grad_()
         self.target_landmarks = landmarks.to('cuda:0')
         
-
+        logger.info(f"Body pose shape: {self.body_pose.shape}")
         # Initialize visualizer
         self.target_point_cloud = target_point_cloud
         
-        self.viz.create_window()
-        opt = self.viz.get_render_option()
-        opt.mesh_show_wireframe = True
-        
-        self.viz.add_geometry(self.target_point_cloud)
-
+        old_neck_position = self.body_pose[0, 11*3:11*3+3]
+    
         # OPTIMIZING 
         self.optimize(logger, params=[self.global_position, self.global_orient], loss_type='transl', num_iterations=200)
         
         self.optimize(logger, params=[self.body_pose], lr=0.001, loss_type='pose', num_iterations=200)
-        
+        # reset head position
         # translate the body to the surface
         with torch.no_grad():
             offset = -self.compute_distance_from_pelvis_joint_to_surface(0)
@@ -57,6 +54,10 @@ class SMPLModelOptimizer:
         
         self.optimize(logger, params=[self.betas], lr=0.0001, loss_type='shape', num_iterations=200)
 
+        with torch.no_grad():
+            self.body_pose[0, 11*3:11*3+3] = old_neck_position
+            
+   
         return self.betas, self.body_pose, self.global_position
     
     def point_cloud_to_tensor(self, point_cloud):
@@ -89,10 +90,10 @@ class SMPLModelOptimizer:
             prior_loss = self.prior.forward(self.body_pose, self.betas)
             beta_loss = (self.betas**2).mean()
             data_loss = self.chamfer_distance(generated_point_cloud_tensor.unsqueeze(0), self.target_point_cloud_tensor.unsqueeze(0), reverse=True)
-            return 1 * prior_loss + 1 * beta_loss + 1 * data_loss
+            return 0.1 * prior_loss + 0.01 * beta_loss + 1 * data_loss
 
 
-    def optimize(self, logger, params=[], lr=0.01, loss_type='all', num_iterations=1000, landmarks=None):
+    def optimize(self, logger, params=[], lr=0.01, loss_type='all', num_iterations=1000, landmarks=None, viz=None):
         optimizer = torch.optim.Adam(params, lr)
         for i in range(num_iterations):
             optimizer.zero_grad()
@@ -121,10 +122,10 @@ class SMPLModelOptimizer:
             if i % 50 == 0:
                 logger.info(f"Iteration {i}: Loss = {loss.item()}")
 
-            if i == 0:
-                self.viz.add_geometry(self.mesh)
-            else:
-                self.viz.update_geometry(self.mesh)
+            # if i == 0:
+            #     self.viz.add_geometry(self.mesh)
+            # else:
+            #     self.viz.update_geometry(self.mesh)
 
             for j in range(24):
                 if i == 0:
@@ -152,12 +153,20 @@ class SMPLModelOptimizer:
                 else:
                     self.sphere_list[j].translate(landmarks[j].cpu().detach().numpy(), relative=False)
                     self.viz.update_geometry(self.sphere_list[j])
+                    self.target_sphere_list[j].translate(self.target_landmarks[0, j*3:j*3+3].cpu().detach().numpy(), relative=False)
                     self.viz.update_geometry(self.target_sphere_list[j])
             # time.sleep(0.1)
             self.viz.poll_events()
             self.viz.update_renderer()
-        
-        # self.viz.clear_geometries()
+            start_time = time.time()
+            while time.time() - start_time < 3:
+                self.viz.poll_events()
+                self.viz.update_renderer()
+        self.viz.remove_geometry(self.mesh)
+        for sphere in self.sphere_list:
+            self.viz.remove_geometry(sphere)
+        for sphere in self.target_sphere_list:
+            self.viz.remove_geometry(sphere)
         self.sphere_list = []
         self.target_sphere_list = []
         

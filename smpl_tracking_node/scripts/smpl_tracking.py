@@ -219,14 +219,16 @@ class SMPLXTracking(Node):
         
         if not self.first_mesh and not self.first_point_cloud and not self.betas_optimized and OPTIMIZE_BETAS:
             self.get_logger().info("Optimizing params") 
-
+            self.viz.remove_geometry(self.mesh)
             self.betas, self.body_pose, self.global_position = self.betas_optimizer.optimize_model(
                                                         self.get_logger(),
                                                        self.point_cloud, 
                                                        self.global_orient, 
                                                        self.global_position, 
                                                        self.body_pose,
-                                                       self.landmarks)
+                                                       self.landmarks,
+                                                       self.viz)
+            self.viz.add_geometry(self.mesh)
             self.betas_optimized = True
 
         # forward pass
@@ -292,6 +294,15 @@ class SMPLXTracking(Node):
             #     self.viz.update_geometry(self.spheres[i])
             #     self.viz.update_geometry(self.spheres_smpl[i])
 
+        if self.betas_optimized:
+            while True:
+                self.viz.poll_events()
+                self.viz.update_renderer()
+                time.sleep(0.03)
+                # break only if space is pressed
+                # if self.viz.get_window().was_key_pressed(o3d.visualization.KeyEvent.KEY_Space):
+                #     break
+        
         
         # send params to docker
 

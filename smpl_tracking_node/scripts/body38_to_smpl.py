@@ -41,30 +41,30 @@ ZED_BODY_38= {
     "LAST" : 38
 }
 SMPL_BODY_24 = [
-    "pelvis",
-    "left_hip",
-    "right_hip",
-    "spine1",
-    "left_knee",
-    "right_knee",
-    "spine2",
-    "left_ankle",
-    "right_ankle",
-    "spine3",
-    "left_foot",
-    "right_foot",
-    "neck",
-    "left_collar",
-    "right_collar",
-    "head",
-    "left_shoulder",
-    "right_shoulder",
-    "left_elbow",
-    "right_elbow",
-    "left_wrist",
-    "right_wrist",
-    "left_hand",
-    "right_hand",
+    "pelvis", 
+    "left_hip", # 0
+    "right_hip", # 1
+    "spine1", # 2
+    "left_knee", # 3
+    "right_knee", # 4
+    "spine2", # 5
+    "left_ankle", # 6
+    "right_ankle", # 7
+    "spine3", # 8
+    "left_foot", # 9
+    "right_foot", # 10
+    "neck", # 11
+    "left_collar", # 12
+    "right_collar", # 13
+    "head", # 14
+    "left_shoulder", # 15
+    "right_shoulder", # 16
+    "left_elbow", # 17
+    "right_elbow", # 18
+    "left_wrist", # 19
+    "right_wrist", # 20
+    "left_hand", # 21
+    "right_hand", # 22
 ]
 
 ZED_BODY_38_TO_SMPL_BODY_24 = [
