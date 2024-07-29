@@ -160,9 +160,9 @@ class SMPLXTracking(Node):
                 self.landmarks[0][i*3 + 2] = msg.keypoints[self.map[i]].position.z
                 
         # SMPL translation seems to be defined with respect to the SPINE_2
-        self.global_position[0] = torch.tensor([msg.keypoints[2].position.x, msg.keypoints[2].position.y , msg.keypoints[2].position.z]).to(DEVICE)
-        
-        self.global_orient[0] = torch.tensor(self.quaternion_to_rotvec(msg.global_root_orientation)).to(DEVICE)
+        with torch.no_grad():
+            self.global_position[0] = torch.tensor([msg.keypoints[2].position.x, msg.keypoints[2].position.y , msg.keypoints[2].position.z]).to(DEVICE)
+            self.global_orient[0] = torch.tensor(self.quaternion_to_rotvec(msg.global_root_orientation)).to(DEVICE)
         self.current_body_pose = msg.local_orientation_per_joint
         
         self.draw()
@@ -294,11 +294,11 @@ class SMPLXTracking(Node):
             #     self.viz.update_geometry(self.spheres[i])
             #     self.viz.update_geometry(self.spheres_smpl[i])
 
-        if self.betas_optimized:
-            while True:
-                self.viz.poll_events()
-                self.viz.update_renderer()
-                time.sleep(0.03)
+        # if self.betas_optimized:
+        #     while True:
+        #         self.viz.poll_events()
+        #         self.viz.update_renderer()
+        #         time.sleep(0.03)
                 # break only if space is pressed
                 # if self.viz.get_window().was_key_pressed(o3d.visualization.KeyEvent.KEY_Space):
                 #     break
@@ -335,7 +335,6 @@ class SMPLXTracking(Node):
                     self.viz.poll_events()
                     self.viz.update_renderer()
                     time.sleep(0.03)
-                    self.get_logger().info("Waiting for space key press")
             else:
                 self.param_sender.receive_skel(self.skel_mesh)
 

@@ -40,24 +40,29 @@ class SMPLModelOptimizer:
         self.target_point_cloud = target_point_cloud
         
         old_neck_position = self.body_pose[0, 11*3:11*3+3]
+        old_head_position = self.body_pose[0, 14*3:14*3+3]
     
         # OPTIMIZING 
-        self.optimize(logger, params=[self.global_position, self.global_orient], loss_type='transl', num_iterations=200)
+        self.optimize(logger, params=[self.global_position, self.global_orient], loss_type='transl', num_iterations=50)
         
-        self.optimize(logger, params=[self.body_pose], lr=0.001, loss_type='pose', num_iterations=200)
+        self.optimize(logger, params=[self.body_pose], lr=0.001, loss_type='pose', num_iterations=50)
         # reset head position
         # translate the body to the surface
-        with torch.no_grad():
-            offset = -self.compute_distance_from_pelvis_joint_to_surface(0)
-            offset = torch.tensor([offset], dtype=torch.float32, device='cuda:0')
-            self.global_position[0, :] =  self.global_position[0, :] + offset
         
-        self.optimize(logger, params=[self.betas], lr=0.0001, loss_type='shape', num_iterations=200)
-
+        # self.optimize(logger, params=[self.betas], lr=0.001, loss_type='shape', num_iterations=200)
         with torch.no_grad():
             self.body_pose[0, 11*3:11*3+3] = old_neck_position
-            
-   
+            self.body_pose[0, 14*3:14*3+3] = old_head_position
+            offset = - self.compute_distance_from_pelvis_joint_to_surface(0)
+            offset = torch.tensor([offset], dtype=torch.float32, device='cuda:0')
+            self.global_position[0, :] =  self.global_position[0, :] + offset
+
+        # remove gradient
+        # self.betas = self.global_position
+        # self.body_pose = self.global_orient.detach()
+        # self.global_position = self.global_position.detach()
+
+
         return self.betas, self.body_pose, self.global_position
     
     def point_cloud_to_tensor(self, point_cloud):
@@ -122,10 +127,10 @@ class SMPLModelOptimizer:
             if i % 50 == 0:
                 logger.info(f"Iteration {i}: Loss = {loss.item()}")
 
-            # if i == 0:
-            #     self.viz.add_geometry(self.mesh)
-            # else:
-            #     self.viz.update_geometry(self.mesh)
+            if i == 0:
+                self.viz.add_geometry(self.mesh)
+            else:
+                self.viz.update_geometry(self.mesh)
 
             for j in range(24):
                 if i == 0:
@@ -159,9 +164,9 @@ class SMPLModelOptimizer:
             self.viz.poll_events()
             self.viz.update_renderer()
             start_time = time.time()
-            while time.time() - start_time < 3:
-                self.viz.poll_events()
-                self.viz.update_renderer()
+            # while time.time() - start_time < 0.5:
+            #     self.viz.poll_events()
+            #     self.viz.update_renderer()
         self.viz.remove_geometry(self.mesh)
         for sphere in self.sphere_list:
             self.viz.remove_geometry(sphere)
