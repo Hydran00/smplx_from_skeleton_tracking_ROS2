@@ -18,6 +18,7 @@ ament_python_install_package(${PROJECT_NAME})
 install(PROGRAMS
   scripts/smpl_tracking.py
   scripts/body_json_parser.py
+  scripts/test_color_face.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

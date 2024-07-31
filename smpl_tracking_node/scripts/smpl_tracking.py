@@ -250,6 +250,9 @@ class SMPLXTracking(Node):
         if OPTIMIZE_BETAS and not self.betas_optimized and self.first_mesh:
             self.get_logger().info("Optimizing params") 
             self.viz.remove_geometry(self.mesh)
+            # dump pointcloud
+            o3d.io.write_point_cloud("point_cloud.ply", self.point_cloud)
+            
             self.betas, self.body_pose, self.global_position = self.params_optimizer.optimize_model(
                                                         self.get_logger(),
                                                        self.point_cloud, 

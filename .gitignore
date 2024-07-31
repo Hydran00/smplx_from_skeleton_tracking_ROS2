@@ -3,3 +3,6 @@ models
 build
 install
 log
+**/**.png
+**/**.json
+**/**.ply
