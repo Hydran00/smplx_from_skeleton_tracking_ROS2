@@ -4,6 +4,9 @@ import numpy as np
 import open3d as o3d
 from chamferdist import ChamferDistance
 import sys, os, pickle
+import scipy
+import time
+import  pynput
 
 class LandmarkLoss(nn.Module):
     def __init__(self):
@@ -145,3 +148,106 @@ class MaxMixturePrior(nn.Module):
             return self.merged_log_likelihood(pose, betas)
         else:
             return self.log_likelihood(pose, betas)
+        
+    
+def compute_distance_from_pelvis_joint_to_surface(self, it):
+    # SPONSORED BY https://github.com/matteodv99tn
+    # define scene
+    humanoid = o3d.t.geometry.TriangleMesh.from_legacy(self.mesh)
+    scene = o3d.t.geometry.RaycastingScene()
+    scene.add_triangles(humanoid)
+    
+    # use open3d ray casting to compute distance from pelvis joint to surface
+    start = self.global_position[0].cpu().detach().numpy()
+    
+    # direction is the third column of the global rotation matrix
+    rotm = scipy.spatial.transform.Rotation.from_rotvec(self.global_orient.cpu().detach().numpy())
+    direction = rotm.as_matrix()[:, 2][0]
+    
+    self.logger.info(f"start: {start}")
+    self.logger.info(f"direction: {direction}")
+    
+    ray = o3d.core.Tensor([ [*start, *direction]], dtype=o3d.core.Dtype.Float32)
+    
+    ans = scene.cast_rays(ray)
+    
+    
+    # Visualize
+    length = 2.0
+    end = start + length * direction
+    points = [start, end]
+    lines = [[0, 1]]
+    colors = [[1, 0, 0]]  # Red color for the line
+
+    line_set = o3d.geometry.LineSet()
+    line_set.points = o3d.utility.Vector3dVector(points)
+    line_set.lines = o3d.utility.Vector2iVector(lines)
+    line_set.colors = o3d.utility.Vector3dVector(colors)
+
+    # Step 4: Visualize the LineSet
+    if it==0:
+        self.viz.add_geometry(line_set)
+    else:
+        self.viz.update_geometry(line_set)
+    
+    self.logger.info(f"Distance from pelvis joint to surface: {ans}")
+    self.logger.info(f"Vertex ID: {ans['primitive_ids']}")
+    
+
+    offset = ans['t_hit'][0].cpu().numpy()
+    return offset * direction
+
+
+def compute_distance_from_pelvis_joint_to_surface(human_mesh, global_position, global_orient):
+    # SUGGESTED BY https://github.com/matteodv99tn
+    # define scene
+    humanoid = o3d.t.geometry.TriangleMesh.from_legacy(human_mesh)
+    scene = o3d.t.geometry.RaycastingScene()
+    scene.add_triangles(humanoid)
+    
+    # use open3d ray casting to compute distance from pelvis joint to surface
+    start = global_position[0].cpu().detach().numpy()
+    
+    # direction is the third column of the global rotation matrix
+    rotm = scipy.spatial.transform.Rotation.from_rotvec(global_orient.cpu().detach().numpy())
+    direction = rotm.as_matrix()[:, 2][0]
+
+    ray = o3d.core.Tensor([ [*start, *direction]], dtype=o3d.core.Dtype.Float32)
+    
+    # logger.info(f"start: {start}")
+    # logger.info(f"direction: {direction}")
+    
+    ans = scene.cast_rays(ray)
+    
+    # Visualize
+    # length = 2.0
+    # end = start + length * direction
+    # points = [start, end]
+    # lines = [[0, 1]]
+    # colors = [[1, 0, 0]]  # Red color for the line
+
+    # line_set = o3d.geometry.LineSet()
+    # line_set.points = o3d.utility.Vector3dVector(points)
+    # line_set.lines = o3d.utility.Vector2iVector(lines)
+    # line_set.colors = o3d.utility.Vector3dVector(colors)
+
+    # # Step 4: Visualize the LineSet
+    # if it==0:
+    #     viz.add_geometry(line_set)
+    # else:
+    #     viz.update_geometry(line_set)
+    
+    
+    # self.logger.info(f"Distance from pelvis joint to surface: {ans}")
+    # self.logger.info(f"Vertex ID: {ans['primitive_ids']}")
+    
+    offset = ans['t_hit'][0].cpu().numpy()
+    # block(viz)
+    return offset * direction
+
+
+def block(viz):
+    while True:
+        viz.poll_events()
+        viz.update_renderer()
+        time.sleep(0.03)

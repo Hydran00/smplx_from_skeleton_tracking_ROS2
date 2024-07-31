@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 import rclpy
 from rclpy.node import Node
 import numpy as np
@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from smpl_params_sender import SMPLParamsSender
 from smpl_optmizer import SMPLModelOptimizer
 import time
+from utils import compute_distance_from_pelvis_joint_to_surface, block
 @dataclass
 class SMPLParams:
     betas: torch.Tensor
@@ -114,23 +115,23 @@ class SMPLXTracking(Node):
         self.first_mesh = True
         self.first_skel_mesh = True
         self.first_point_cloud = True
+        self.offset_computed = False
         self.mesh = o3d.geometry.TriangleMesh()
         self.point_cloud = o3d.geometry.PointCloud()
         
-        # Timer for periodic drawing
-        self.timer = self.create_timer(0.03, self.draw)
         self.get_logger().info("Tracking node started")
         
         if OPTIMIZE_BETAS:
             self.param_sender = SMPLParamsSender(DEVICE)
-            self.betas_optimizer = SMPLModelOptimizer(self.model, learning_rate=0.1, num_betas=NUM_BETAS)
+            self.params_optimizer = SMPLModelOptimizer(self.model, learning_rate=0.1, num_betas=NUM_BETAS)
         self.betas_optimized = False
         
         # self.reference_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
         # self.viz.add_geometry(self.reference_frame)
         self.spheres = []
         self.spheres_smpl = []
-    
+        self.it=0
+        
     @staticmethod
     def quaternion_to_rotvec(quat):
         def wrap_angle(angle):
@@ -163,35 +164,63 @@ class SMPLXTracking(Node):
         with torch.no_grad():
             self.global_position[0] = torch.tensor([msg.keypoints[2].position.x, msg.keypoints[2].position.y , msg.keypoints[2].position.z]).to(DEVICE)
             self.global_orient[0] = torch.tensor(self.quaternion_to_rotvec(msg.global_root_orientation)).to(DEVICE)
+            
         self.current_body_pose = msg.local_orientation_per_joint
         
-        self.draw()
+        self.update_model()
         
 
     def callback_pc(self, msg):
         """Callback for point cloud data."""
-        # self.get_logger().info("Received point cloud data")
-            
+        # self.get_logger().info("Received point cloud data")            
         fromPointCloud2(self, self.point_cloud, msg)
-
         if self.first_point_cloud:
             self.viz.add_geometry(self.point_cloud)
             self.first_point_cloud = False
-        
+    
         if(self.point_cloud.is_empty()):
             self.get_logger().error("Point cloud is empty")
             return
         self.viz.update_geometry(self.point_cloud)
+        
         self.viz.poll_events()
         self.viz.update_renderer()
-        pass
         
-        
+    def get_skel_model(self):
+        # self.params.body_pose_axis_angle = torch.cat([self.body_pose, torch.tensor([[0, 0, 0]]).to(self.device), torch.tensor([[0, 0, 0]]).to(self.device)], dim=1)
+        if self.model_type == 'smpl':
+            self.get_logger().info("Sending optimized betas, waiting for skel mesh")
+            params = SMPLParams(self.betas, self.gender, self.global_position, self.global_orient, self.body_pose)
+        else:
+            # TODO: add hand pose for smplx
+            params = SMPLParams(self.betas, self.gender, self.global_position, self.global_orient, torch.cat([self.body_pose, torch.tensor([[0, 0, 0]]).to(DEVICE), torch.tensor([[0, 0, 0]]).to(DEVICE)], dim=1))
 
-    def draw(self):
-        # self.get_logger().info("Drawing")
+        self.param_sender.send(params)
+        if(self.first_skel_mesh):
+            self.skel_mesh = o3d.geometry.TriangleMesh()
+            self.viz.poll_events()
+            self.viz.update_renderer()
+            self.param_sender.receive_skel(self.skel_mesh)
+            self.viz.add_geometry(self.skel_mesh)
+            self.first_skel_mesh = False
+            self.get_logger().info("First skel mesh received")
+            # self.viz.update_geometry(self.skel_mesh)
+            # break only if space is pressed
+                
+            # remove the smpl mesh
+
+        # else:
+        #         self.param_sender.receive_skel(self.skel_mesh)
+
+        #     self.viz.poll_events()
+        #     self.viz.update_renderer()
+    
+
+    def update_model(self):
         """Draw the SMPLX model with the current pose."""
-        if self.current_body_pose is None:
+        self.get_logger().info("Drawing")
+        if self.current_body_pose is None or self.first_point_cloud:
+            self.get_logger().error("Body pose or point cloud are not available")
             return
 
         # add body pose (valid for both smpl and smplx)
@@ -217,10 +246,11 @@ class SMPLXTracking(Node):
             # TODO: add hand pose for smplx
             pass
         
-        if not self.first_mesh and not self.first_point_cloud and not self.betas_optimized and OPTIMIZE_BETAS:
+        # optimize only the first iteration
+        if OPTIMIZE_BETAS and not self.betas_optimized and self.first_mesh:
             self.get_logger().info("Optimizing params") 
             self.viz.remove_geometry(self.mesh)
-            self.betas, self.body_pose, self.global_position = self.betas_optimizer.optimize_model(
+            self.betas, self.body_pose, self.global_position = self.params_optimizer.optimize_model(
                                                         self.get_logger(),
                                                        self.point_cloud, 
                                                        self.global_orient, 
@@ -228,8 +258,31 @@ class SMPLXTracking(Node):
                                                        self.body_pose,
                                                        self.landmarks,
                                                        self.viz)
-            self.viz.add_geometry(self.mesh)
             self.betas_optimized = True
+            
+            
+        # offset is already added in the optimization, but not in the normal case. 
+        # Skipping the first iteration since the mesh is needed for the computation of the offset
+        if not self.first_mesh and not OPTIMIZE_BETAS:
+            # offset is due to the fact that the ZED Body Tracking SDK project the joints on the surface of the cloud and not in the anatomical position
+            with torch.no_grad():
+                self.get_logger().info("Computing offset"+ str(self.it))
+                if not self.offset_computed:
+                    offset = -compute_distance_from_pelvis_joint_to_surface(self.mesh, self.global_position, self.global_orient)
+                    # check if inf is returned
+                    self.offset = torch.tensor(offset, dtype=torch.float32, device='cuda:0')
+                    self.offset_computed = True
+                    if True in torch.isinf(self.offset):
+                        self.get_logger().error("Offset is infinite")
+                        
+                else:
+                    self.get_logger().error("Offset is finite")
+                    self.global_position[0, :] =  self.global_position[0, :] + self.offset
+                    self.get_logger().info(f"Offset: {self.offset}")
+                    # block()
+                    
+            # self.viz.add_geometry(self.mesh)
+
 
         # forward pass
         if self.model_type == 'smpl':
@@ -257,42 +310,50 @@ class SMPLXTracking(Node):
             )
 
 
-        # self.get_logger().info("SMPLX model forward pass completed")
-        
         vertices = output.vertices[0].detach().cpu().numpy() 
         faces = self.model.faces
 
         self.mesh.vertices = o3d.utility.Vector3dVector(vertices)
         self.mesh.triangles = o3d.utility.Vector3iVector(faces)        
         
+        # if not self.first_mesh and not OPTIMIZE_BETAS:
+        #     while True:
+        #         self.viz.update_geometry(self.mesh)
+        #         self.viz.poll_events()
+        #         self.viz.update_renderer()
+        #         time.sleep(0.03)
+
+        
         landmarks_smpl = output.joints.detach().cpu().numpy()
         landmarks_smpl = landmarks_smpl[:, :24, :].reshape(1, 72)
+        
         if self.first_mesh:
             self.viz.add_geometry(self.mesh)
-            
-            # add 21 spheres foreach joint location
-            # for i in range(NUM_BODY_JOINTS):
-            #     sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.03)
-            #     sphere_smpl = o3d.geometry.TriangleMesh.create_sphere(radius=0.03)
-            #     sphere.compute_vertex_normals()
-            #     sphere_smpl.compute_vertex_normals()
-            #     sphere.paint_uniform_color([0, 1, 0])
-            #     sphere_smpl.paint_uniform_color([1, 0, 0])
-            #     sphere.translate(self.landmarks[0][i*3:i*3+3].detach().cpu().numpy(), relative=False)
-            #     sphere_smpl.translate(landmarks_smpl[0][i*3:i*3+3], relative=False)
-            #     self.spheres.append(sphere)
-            #     self.spheres_smpl.append(sphere_smpl)
-            #     self.viz.add_geometry(sphere)
-            #     self.viz.add_geometry(sphere_smpl)
             self.first_mesh = False
             self.get_logger().info("First mesh received")
+            
+            # add 21 spheres foreach joint location
+            for i in range(NUM_BODY_JOINTS):
+                sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.02)
+                sphere_smpl = o3d.geometry.TriangleMesh.create_sphere(radius=0.02)
+                sphere.compute_vertex_normals()
+                sphere_smpl.compute_vertex_normals()
+                sphere.paint_uniform_color([0, 1, 0])
+                sphere_smpl.paint_uniform_color([1, 0, 0])
+                sphere.translate(self.landmarks[0][i*3:i*3+3].detach().cpu().numpy(), relative=False)
+                sphere_smpl.translate(landmarks_smpl[0][i*3:i*3+3], relative=False)
+                self.spheres.append(sphere)
+                self.spheres_smpl.append(sphere_smpl)
+                self.viz.add_geometry(sphere)
+                self.viz.add_geometry(sphere_smpl)
         else:
+            self.get_logger().info("Updating mesh received")
             self.viz.update_geometry(self.mesh)
-            # for i in range(NUM_BODY_JOINTS):
-            #     self.spheres[i].translate(self.landmarks[0][i*3:i*3+3].detach().cpu().numpy(), relative=False)
-            #     self.spheres_smpl[i].translate(landmarks_smpl[0][i*3:i*3+3], relative=False)
-            #     self.viz.update_geometry(self.spheres[i])
-            #     self.viz.update_geometry(self.spheres_smpl[i])
+            for i in range(NUM_BODY_JOINTS):
+                self.spheres[i].translate(self.landmarks[0][i*3:i*3+3].detach().cpu().numpy(), relative=False)
+                self.spheres_smpl[i].translate(landmarks_smpl[0][i*3:i*3+3], relative=False)
+                self.viz.update_geometry(self.spheres[i])
+                self.viz.update_geometry(self.spheres_smpl[i])
 
         # if self.betas_optimized:
         #     while True:
@@ -302,47 +363,25 @@ class SMPLXTracking(Node):
                 # break only if space is pressed
                 # if self.viz.get_window().was_key_pressed(o3d.visualization.KeyEvent.KEY_Space):
                 #     break
+        # block(self.viz)
         
-        
-        # send params to docker
-
+        # GET SKEL MODEL
         if self.betas_optimized:
-            # self.params.body_pose_axis_angle = torch.cat([self.body_pose, torch.tensor([[0, 0, 0]]).to(self.device), torch.tensor([[0, 0, 0]]).to(self.device)], dim=1)
-            if self.model_type == 'smpl':
-                self.get_logger().info("Sending optimized betas, waiting for skel mesh")
-                params = SMPLParams(self.betas, self.gender, self.global_position, self.global_orient, self.body_pose)
-            else:
-                # TODO: add hand pose for smplx
-                params = SMPLParams(self.betas, self.gender, self.global_position, self.global_orient, torch.cat([self.body_pose, torch.tensor([[0, 0, 0]]).to(DEVICE), torch.tensor([[0, 0, 0]]).to(DEVICE)], dim=1))
-
-            self.param_sender.send(params)
-            if(self.first_skel_mesh):
-                self.skel_mesh = o3d.geometry.TriangleMesh()
+            self.viz.remove_geometry(self.mesh)
+            self.get_skel_model()
+            self.viz.remove_geometry(self.mesh) 
+            while True:
+                # self.param_sender.receive_skel(self.skel_mesh)
                 self.viz.poll_events()
                 self.viz.update_renderer()
-                self.param_sender.receive_skel(self.skel_mesh)
-                self.viz.add_geometry(self.skel_mesh)
-                self.first_skel_mesh = False
-                self.get_logger().info("First skel mesh received")
-                # self.viz.update_geometry(self.skel_mesh)
-                # break only if space is pressed
-                
-                # remove the smpl mesh
-                self.viz.remove_geometry(self.mesh) 
-                while True:
-                    # detect key press
-                    # self.param_sender.receive_skel(self.skel_mesh)
-                    self.viz.poll_events()
-                    self.viz.update_renderer()
-                    time.sleep(0.03)
-            else:
-                self.param_sender.receive_skel(self.skel_mesh)
+                time.sleep(0.03)
 
-            self.viz.poll_events()
-            self.viz.update_renderer()
-        
         self.viz.poll_events()
         self.viz.update_renderer()
+        self.it=0
+
+        
+        
             
         
 def main(args=None):

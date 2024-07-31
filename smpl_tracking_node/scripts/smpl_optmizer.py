@@ -3,11 +3,11 @@ import numpy as np
 import open3d as o3d
 
 import torch.nn.functional as F
-from losses import LandmarkLoss, MaxMixturePrior
+from utils import LandmarkLoss, MaxMixturePrior, compute_distance_from_pelvis_joint_to_surface
 import os
 from chamferdist import ChamferDistance
 import time 
-import scipy
+from utils import block
 class SMPLModelOptimizer:
     def __init__(self, smpl_model, learning_rate=0.01, num_betas=10):
         self.smpl_model = smpl_model  # Assumes smpl_model is an instance of a pre-defined SMPL model class
@@ -26,7 +26,7 @@ class SMPLModelOptimizer:
         
         # self.viz = o3d.visualization.Visualizer()
 
-    def optimize_model(self, logger, target_point_cloud, global_orient, global_position, body_pose, landmarks,viz):
+    def optimize_model(self, logger, target_point_cloud, global_orient, global_position, body_pose, landmarks, viz):
         self.viz = viz
 
         self.target_point_cloud_tensor = self.point_cloud_to_tensor(target_point_cloud).to('cuda:0')
@@ -35,33 +35,51 @@ class SMPLModelOptimizer:
         self.body_pose = body_pose.to('cuda:0').detach().requires_grad_()
         self.target_landmarks = landmarks.to('cuda:0')
         
-        logger.info(f"Body pose shape: {self.body_pose.shape}")
         # Initialize visualizer
         self.target_point_cloud = target_point_cloud
         
+        # backup old head and neck position since we will reset them after optimizing (zed body tracking of head and neck is not accurate)
         old_neck_position = self.body_pose[0, 11*3:11*3+3]
         old_head_position = self.body_pose[0, 14*3:14*3+3]
     
-        # OPTIMIZING 
-        self.optimize(logger, params=[self.global_position, self.global_orient], loss_type='transl', num_iterations=50)
+        # OPTIMIZING
+        output = self.get_smpl()
+        mesh = o3d.geometry.TriangleMesh()
+        mesh.vertices = o3d.utility.Vector3dVector(output.vertices[0].cpu().detach().numpy())
+        mesh.triangles = o3d.utility.Vector3iVector(self.smpl_model.faces)
         
-        self.optimize(logger, params=[self.body_pose], lr=0.001, loss_type='pose', num_iterations=50)
+             
+        self.optimize(logger, params=[self.global_position, self.global_orient], loss_type='transl', num_iterations=200)
+        
+        self.optimize(logger, params=[self.body_pose], lr=0.001, loss_type='pose', num_iterations=200)
         # reset head position
         # translate the body to the surface
         
-        # self.optimize(logger, params=[self.betas], lr=0.001, loss_type='shape', num_iterations=200)
+        with torch.no_grad():
+            offset = - compute_distance_from_pelvis_joint_to_surface(mesh, self.global_position, self.global_orient)
+            offset = torch.tensor([offset], dtype=torch.float32, device='cuda:0')
+            self.global_position[0, :] =  self.global_position[0, :] + offset
+        
+        # optimize arms and legs again
+        self.arms_leg_idx = [3,4,9,10,17,18,19,20,21,22]
+        self.arms_leg_params = torch.cat([self.body_pose[0, idx*3:idx*3+3] for idx in self.arms_leg_idx], dim=0).reshape(1, 30).to('cuda:0').detach().requires_grad_()
+        self.optimize(logger, params=[self.body_pose], lr=0.001, loss_type='pose', num_iterations=200)
+        
+        with torch.no_grad():
+            for i, idx in enumerate(self.arms_leg_idx):
+                self.body_pose[0, idx*3:idx*3+3] = self.arms_leg_params[0, i*3:i*3+3]
+        
+            
+        self.optimize(logger, params=[self.betas], lr=0.001, loss_type='shape', num_iterations=500)
         with torch.no_grad():
             self.body_pose[0, 11*3:11*3+3] = old_neck_position
             self.body_pose[0, 14*3:14*3+3] = old_head_position
-            offset = - self.compute_distance_from_pelvis_joint_to_surface(0)
-            offset = torch.tensor([offset], dtype=torch.float32, device='cuda:0')
-            self.global_position[0, :] =  self.global_position[0, :] + offset
 
-        # remove gradient
-        # self.betas = self.global_position
-        # self.body_pose = self.global_orient.detach()
-        # self.global_position = self.global_position.detach()
-
+        # remove gradient tracking
+        self.global_position = self.global_position.detach()
+        self.global_orient = self.global_orient.detach()
+        self.body_pose = self.body_pose.detach()
+        self.betas = self.betas.detach()
 
         return self.betas, self.body_pose, self.global_position
     
@@ -84,12 +102,11 @@ class SMPLModelOptimizer:
             return data_loss
         
         if type == "pose":
-            self.logger.info(f"Landmarks shape: {landmarks.shape}") # 45 x 3
-            self.logger.info(f"Target Landmarks shape: {self.target_landmarks.shape}") # 1 x 72
             lmk = landmarks[:24].reshape(1, 72)
             landmark_loss = self.landmark_loss(lmk, self.target_landmarks)
+            data_loss = self.chamfer_distance(self.target_point_cloud_tensor.unsqueeze(0), generated_point_cloud_tensor.unsqueeze(0), reverse=True)
             prior_loss = self.prior.forward(self.body_pose, self.betas)
-            return 0.1 * landmark_loss #+ 0.01 * prior_loss
+            return 0.1 * data_loss + landmark_loss + 0.01 * prior_loss
         
         elif type == "shape":
             prior_loss = self.prior.forward(self.body_pose, self.betas)
@@ -97,25 +114,25 @@ class SMPLModelOptimizer:
             data_loss = self.chamfer_distance(generated_point_cloud_tensor.unsqueeze(0), self.target_point_cloud_tensor.unsqueeze(0), reverse=True)
             return 0.1 * prior_loss + 0.01 * beta_loss + 1 * data_loss
 
-
-    def optimize(self, logger, params=[], lr=0.01, loss_type='all', num_iterations=1000, landmarks=None, viz=None):
-        optimizer = torch.optim.Adam(params, lr)
-        for i in range(num_iterations):
-            optimizer.zero_grad()
-            output = self.smpl_model(
+    def get_smpl(self):
+        return self.smpl_model(
                 betas=self.betas,
                 global_orient=self.global_orient,
                 body_pose=self.body_pose,
                 transl=self.global_position,
                 return_verts=True
             )
+
+    def optimize(self, logger, params=[], lr=0.01, loss_type='all', num_iterations=1000, landmarks=None, viz=None):
+        optimizer = torch.optim.Adam(params, lr)
+        for i in range(num_iterations):
+            optimizer.zero_grad()
+            output = self.get_smpl()
             vertices = output.vertices[0]
             joints = output.joints[0]
             landmarks = joints
             self.logger = logger
             
-            logger.info(f"joint shape: {joints.shape}")
-            logger.info(f"vertices shape: {vertices.shape}")
             
             self.mesh.vertices = o3d.utility.Vector3dVector(vertices.cpu().detach().numpy())
             self.mesh.triangles = o3d.utility.Vector3iVector(self.smpl_model.faces)
@@ -123,7 +140,6 @@ class SMPLModelOptimizer:
             loss = self.compute_loss(loss_type, vertices, landmarks)
             loss.backward()
             optimizer.step()
-            logger.info(f"Iteration {i}: Loss = {loss.item()}")
             if i % 50 == 0:
                 logger.info(f"Iteration {i}: Loss = {loss.item()}")
 
@@ -177,49 +193,3 @@ class SMPLModelOptimizer:
         
         return self.betas, self.body_pose
     
-    def compute_distance_from_pelvis_joint_to_surface(self, it):
-        # SPONSORED BY https://github.com/matteodv99tn
-        # define scene
-        humanoid = o3d.t.geometry.TriangleMesh.from_legacy(self.mesh)
-        scene = o3d.t.geometry.RaycastingScene()
-        scene.add_triangles(humanoid)
-        
-        # use open3d ray casting to compute distance from pelvis joint to surface
-        start = self.global_position[0].cpu().detach().numpy()
-        
-        # direction is the third column of the global rotation matrix
-        rotm = scipy.spatial.transform.Rotation.from_rotvec(self.global_orient.cpu().detach().numpy())
-        direction = rotm.as_matrix()[:, 2][0]
-        
-        self.logger.info(f"start: {start}")
-        self.logger.info(f"direction: {direction}")
-        
-        ray = o3d.core.Tensor([ [*start, *direction]], dtype=o3d.core.Dtype.Float32)
-        
-        ans = scene.cast_rays(ray)
-        
-        
-        # Visualize
-        length = 2.0
-        end = start + length * direction
-        points = [start, end]
-        lines = [[0, 1]]
-        colors = [[1, 0, 0]]  # Red color for the line
-
-        line_set = o3d.geometry.LineSet()
-        line_set.points = o3d.utility.Vector3dVector(points)
-        line_set.lines = o3d.utility.Vector2iVector(lines)
-        line_set.colors = o3d.utility.Vector3dVector(colors)
-
-        # Step 4: Visualize the LineSet
-        if it==0:
-            self.viz.add_geometry(line_set)
-        else:
-            self.viz.update_geometry(line_set)
-        
-        self.logger.info(f"Distance from pelvis joint to surface: {ans}")
-        self.logger.info(f"Vertex ID: {ans['primitive_ids']}")
-        
-
-        offset = ans['t_hit'][0].cpu().numpy()
-        return offset * direction
