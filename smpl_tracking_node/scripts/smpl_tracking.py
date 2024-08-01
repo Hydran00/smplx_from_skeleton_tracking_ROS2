@@ -249,10 +249,17 @@ class SMPLXTracking(Node):
         # optimize only the first iteration
         if OPTIMIZE_BETAS and not self.betas_optimized and self.first_mesh:
             self.get_logger().info("Optimizing params") 
+                    # remove outliers from the point cloud
+
+            # filter the point cloud with a plane on the Z axis
+            filtered_points = np.asarray(self.point_cloud.points)[np.asarray(self.point_cloud.points)[:, 2] < self.global_position[0, 2].cpu().detach().numpy()+0.2]
+            colors = np.asarray(self.point_cloud.colors)[np.asarray(self.point_cloud.points)[:, 2] < self.global_position[0, 2].cpu().detach().numpy()+0.2]
+            self.point_cloud.points = o3d.utility.Vector3dVector(filtered_points)
+            self.point_cloud.colors = o3d.utility.Vector3dVector(colors)
+            self.viz.update_geometry(self.point_cloud)
             self.viz.remove_geometry(self.mesh)
             # dump pointcloud
             o3d.io.write_point_cloud("point_cloud.ply", self.point_cloud)
-            
             self.betas, self.body_pose, self.global_position = self.params_optimizer.optimize_model(
                                                         self.get_logger(),
                                                        self.point_cloud, 
