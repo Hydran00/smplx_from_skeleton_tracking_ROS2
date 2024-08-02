@@ -10,3 +10,9 @@ LUNG_US_SMPL_FACES = {
     "right_basal_midclavicular" : 6457, #661,#929      # 13
     "right_upper_midclavicular": 884, #595,#596       # 14
 }
+import numpy as np
+def to_z_up(mesh):
+    R = mesh.get_rotation_matrix_from_xyz((-np.pi/2, 0, 0))
+    mesh.rotate(R, center=[0, 0, 0])
+    # R = mesh.get_rotation_matrix_from_xyz((0, np.pi, 0))
+    # mesh.rotate(R, center=[0, 0, 0])  
