@@ -3,7 +3,7 @@ import open3d as o3d
 import numpy as np
 import os
 import time
-from body38_to_smpl import LUNG_US_SMPL_FACES
+from utils import LUNG_US_SMPL_FACES
 import copy
 # Define materials
 mat_sphere_transparent = o3d.visualization.rendering.MaterialRecord()

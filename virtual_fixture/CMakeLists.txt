@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(smpl_tracking_node)
+project(virtual_fixture)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -10,14 +10,9 @@ find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
 find_package(rclpy REQUIRED)
 
-# uncomment the following section in order to fill in
-# further dependencies manually.
-# find_package(<dependency> REQUIRED)
-
 ament_python_install_package(${PROJECT_NAME})
 install(PROGRAMS
-  scripts/smpl_tracking.py
-  scripts/body_json_parser.py
+  scripts/visualize_model.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
