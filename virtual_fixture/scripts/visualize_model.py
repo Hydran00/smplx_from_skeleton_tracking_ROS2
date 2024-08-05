@@ -15,7 +15,7 @@ import threading
 class Visualizer:
 
     def __init__(self):
-        # self.viz = o3d.visualization.Visualizer()
+        self.viz = o3d.visualization.Visualizer()
         # self.viz.create_window()
         # opt = self.viz.get_render_option()
         # opt.show_coordinate_frame = True
@@ -94,27 +94,12 @@ class Visualizer:
         # self.viz.add_geometry(self.target_ref_frame)
         
         # threading.Thread(target=self.update_viz).start()
-        self.i = 0
+    def add_geometry(self, mesh):
+        self.viz.add_geometry(mesh)
+        
     def update(self):
         self.viz.poll_events()
         self.viz.update_renderer()
-        
-    def update_target_pose(self, xyz, quat):
-        T = np.eye(4)
-        # print("update")
-        # convert quat to rotation matrix
-        R = self.target_ref_frame.get_rotation_matrix_from_quaternion(quat)
-        # print RPY
-        # print(1+0.0001*self.i)
-        # T[0,3] = 0.2 #xyz[0]
-        # T[1,3] = 0.2 #xyz[1]
-        # T[2,3] = 0.2 #xyz[2]
-        self.target_ref_frame.rotate(R, center=[0,0,0])
-        self.target_ref_frame.translate([0.1,0.1,0.1], relative=False)
-        # self.target_ref_frame.translate(T[:3,3],relative=False)
-        # TODO understand why the mesh disappears after the first update
-        self.viz.update_geometry(self.target_ref_frame)
-        self.i+=1
         
 if __name__=="__main__":
     vis = Visualizer()

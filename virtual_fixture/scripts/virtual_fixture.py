@@ -12,13 +12,14 @@ import open3d as o3d
 import os
 import trimesh
 from ctypes import *
-import pyassimp
-# from visualize_model import Visualizer
+from visualize_model import Visualizer
 from geometry_msgs.msg import PoseStamped
 from visualization_msgs.msg import MarkerArray, Marker
 import time 
 import numpy as np
 import scipy 
+import utils
+
 class VirtualFixture(Node):
     def __init__(self):
         super().__init__('virtual_fixture')
@@ -27,57 +28,55 @@ class VirtualFixture(Node):
         # self.tf_buffer = Buffer()
         # self.tf_listener = TransformListener(self.tf_buffer, self)
         # self.timer = self.create_timer(0.1, self.publish_mesh)
-        # self.subscribtion = self.create_subscription(PoseStamped, 'target_frame', self.compute_virtual_fixture, 1)
+        self.subscribtion = self.create_subscription(PoseStamped, 'target_frame', self.apply_virtual_fixture, 1)
         self.mesh_publisher = self.create_publisher(Marker, 'visualization_marker', 1) 
-        # self.visualizer = Visualizer()
-        # self.vis_update_timer = self.create_timer(0.03, self.update_viz)
+        self.load_path = os.path.expanduser('~')+"/SKEL_WS/SKEL/output/smpl_fit/smpl_fit_skin.obj"
+        self.skin_save_path = os.path.expanduser('~')+"/ros2_ws/output_mesh.obj"
+        self.areas_save_path_prefix = os.path.expanduser('~')+"/ros2_ws/areas"
+        self.visualizer = Visualizer()
+        self.vis_update_timer = self.create_timer(0.03, self.update_viz)
         # load initial scene
         # self.visualizer.add_target()
-        self.get_logger().info('Virtual Fixture node has been initialized')
-        self.publish_mesh()
+        self.already_scanned_areas = {x:False for x in range(1,14)}
+        self.get_logger().info('Virtual Fixture node has been initialized, already scanned areas: '+str(self.already_scanned_areas)) 
+        self.compute_VF()
+        self.current_area_to_scan = 11
+    
     def update_viz(self):
         self.visualizer.update()   
-         
-    def publish_mesh(self):
-        # Load or create your Open3D mesh with color
-        mesh = o3d.geometry.TriangleMesh.create_sphere()
-        mesh.compute_vertex_normals()
-        num_vertices = len(np.asarray(mesh.vertices))
-        # paint vertices red
-        mesh.vertex_colors = o3d.utility.Vector3dVector(np.random.rand(num_vertices, 3))
-        # Convert Open3D mesh to Trimesh
-        vertices = np.asarray(mesh.vertices)
-        faces = np.asarray(mesh.triangles)
-        vertex_colors = np.asarray(mesh.vertex_colors)
-
-        # Create a Trimesh object
-        trimesh_mesh = trimesh.Trimesh(vertices=vertices, faces=faces, vertex_colors=vertex_colors)
-
-        # Export the Trimesh object to a .dae file
-        path = os.path.expanduser('~')+"/ros_ws/output_mesh.dae"
-        # Export the mesh to a .dae file preserving colors
-        # trimesh_mesh.export(file_obj=path, file_type='dae', include_color=True)
-        output = trimesh.exchange.dae.export_collada(trimesh_mesh)
         
-        # write output
-        with open(path, 'wb') as f:
-            f.write(output)
+    def transform_mesh(self, mesh):
+        # self.get_logger().info("Mesh before: "+str(mesh.get_center()))
+        R = mesh.get_rotation_matrix_from_xyz((np.pi,0,0))
+        mesh.rotate(R,center=mesh.get_center())
+        mesh.translate((0,0.3,0),relative=False)
+        # self.get_logger().info("Mesh after: "+str(mesh.get_center()))
+
         
-        self.get_logger().info('Exporting file: '+str(path))
-        marker = Marker()
-        marker.id = 0
-        # marker.mesh_resource = os.path.expanduser('~')+'/ros_ws/output_mesh.dae'
-        marker.mesh_resource = "file://"+path
-        marker.mesh_use_embedded_materials = True  # Need this to use textures for mesh
-        marker.type = marker.MESH_RESOURCE
-        marker.header.frame_id = "base_link"
-        marker.scale.x = 1.0
-        marker.scale.y = 1.0
-        marker.scale.z = 1.0
-        marker.pose.orientation.w = 1.0
-        self.mesh_publisher.publish(marker)
-        exit(0)
-    def compute_virtual_fixture(self, msg):
+        
+    def compute_VF(self): 
+        utils.clear_meshes(self.mesh_publisher)
+        mesh =o3d.io.read_triangle_mesh(self.load_path)
+        self.transform_mesh(mesh)
+        o3d.io.write_triangle_mesh(self.skin_save_path, mesh)
+        self.mesh = mesh
+        self.get_logger().info("Mesh has been saved, sending it to Rviz")
+        utils.publish_mesh(self.mesh_publisher, self.skin_save_path, 0, rgba=[0.5,0.5,0.5,0.5])
+        
+        self.areas_center = utils.get_protocol_areas_center(mesh)
+        self.get_logger().info("Areas center: "+str(self.areas_center))
+        self.spheres_dict = utils.create_spherical_areas(self.areas_center)
+        for i,sphere in enumerate(self.spheres_dict.values()):
+            idx = list(self.spheres_dict.keys())[i]
+            areas_save_path = self.areas_save_path_prefix+str(idx)+".obj"
+            o3d.io.write_triangle_mesh(areas_save_path, sphere)
+            self.visualizer.add_geometry(sphere)
+            self.get_logger().info(f"Sphere {idx} has been saved in {areas_save_path}, sending it to Rviz")
+            utils.publish_mesh(self.mesh_publisher, areas_save_path, idx, rgba=[1.0,0.0,0.0,0.5])
+        exit()
+        
+        
+    def apply_virtual_fixture(self, msg):
         # retrieve robot ee position
         # try:
         #     t = self.tf_buffer.lookup_transform(
