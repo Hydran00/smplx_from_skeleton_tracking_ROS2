@@ -29,15 +29,17 @@ class VirtualFixture(Node):
         self.base_frame = "base_link"
         # self.tf_buffer = Buffer()
         # self.tf_listener = TransformListener(self.tf_buffer, self)
-        # self.timer = self.create_timer(0.1, self.publish_mesh)
+        self.timer = self.create_timer(1.0, self.publish_areas)
         # self.target_framesubscribtion = self.create_subscription(PoseStamped, 'target_frame', self.apply_virtual_fixture, 1)
-        self.mesh_publisher = self.create_publisher(Marker, 'visualization_marker', 1) 
+        self.mesh_publisher = self.create_publisher(Marker, 'visualization_marker', 1)
         self.load_path = os.path.expanduser('~')+"/SKEL_WS/SKEL/output/smpl_fit/smpl_fit_skin.obj"
         self.skin_save_path = os.path.expanduser('~')+"/ros2_ws/output_mesh.obj"
         self.areas_save_path_prefix = os.path.expanduser('~')+"/ros2_ws/areas"
         self.visualizer = Visualizer()
         self.vis_update_timer = self.create_timer(0.03, self.update_viz)
         self.areas_pub = self.create_publisher(Areas, 'areas', 1)
+        self.areas = None
+        self.radius = 0.05
         self.compute_VF()
         # self.current_area_to_scan = 11
         # self.transitioning_between_areas = True
@@ -50,6 +52,10 @@ class VirtualFixture(Node):
         mesh.rotate(R,center=mesh.get_center())
         mesh.translate((0,0.3,0),relative=False)
 
+    def publish_areas(self):
+        if self.areas is not None:
+            self.areas_pub.publish(self.areas)
+    
     def compute_VF(self): 
         utils.clear_meshes(self.mesh_publisher)
         mesh =o3d.io.read_triangle_mesh(self.load_path)
@@ -57,7 +63,10 @@ class VirtualFixture(Node):
         o3d.io.write_triangle_mesh(self.skin_save_path, mesh)
         self.mesh = mesh
         self.get_logger().info("Mesh has been saved, sending it to Rviz")
-        utils.publish_mesh(self.mesh_publisher, self.skin_save_path, 0, rgba=[0.5,0.5,0.5,0.5])
+        i=0
+        while i<10:
+            utils.publish_mesh(self.mesh_publisher, self.skin_save_path, 0, rgba=[0.5,0.5,0.5,0.5])
+            i+=1
         
         areas = Areas()
         # radius is the first element
@@ -66,7 +75,7 @@ class VirtualFixture(Node):
     
         self.areas_center = utils.get_protocol_areas_center(mesh)
         self.get_logger().info("Areas center: "+str(self.areas_center))
-        self.spheres_dict = utils.create_spherical_areas(self.areas_center)
+        self.spheres_dict = utils.create_spherical_areas(self.areas_center, self.radius)
         for i,sphere in enumerate(self.spheres_dict.values()):
             idx = list(self.spheres_dict.keys())[i]
             areas_save_path = self.areas_save_path_prefix+str(idx)+".obj"
@@ -75,7 +84,11 @@ class VirtualFixture(Node):
             self.get_logger().info(f"Sphere {idx} has been saved in {areas_save_path}, sending it to Rviz")
             utils.publish_mesh(self.mesh_publisher, areas_save_path, idx, rgba=[1.0,0.0,0.0,0.5])
             areas.centers[idx-1].x = self.areas_center[i][0]
+            areas.centers[idx-1].y = self.areas_center[i][1]
+            areas.centers[idx-1].z = self.areas_center[i][2]
         # publish the areas center
+        self.areas = areas
+        self.get_logger().info("Publishing areas : "+str(areas))
         self.areas_pub.publish(areas)
         
 def main(args=None):

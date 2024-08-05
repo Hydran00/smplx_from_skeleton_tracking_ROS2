@@ -6,8 +6,6 @@ from chamferdist import ChamferDistance
 import sys, os, pickle
 import scipy
 import time
-import  pynput
-
 class LandmarkLoss(nn.Module):
     def __init__(self):
         super(LandmarkLoss, self).__init__()
