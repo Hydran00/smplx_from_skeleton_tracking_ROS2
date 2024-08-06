@@ -43,6 +43,8 @@ def color_faces(mesh, faces, color):
 import open3d as o3d
 import os
 import time
+from materials import mat_sphere_transparent, mat_skin
+
 def compute_torax_projection(mesh):
     """
     Computes the projection of the SKEL torax to the SMPL mesh
@@ -50,7 +52,7 @@ def compute_torax_projection(mesh):
     humanoid = o3d.t.geometry.TriangleMesh.from_legacy(mesh)
     skel_path =os.path.expanduser('~')+"/SKEL_WS/SKEL/output/smpl_fit/smpl_fit_skel.obj"
     skel_model = o3d.io.read_triangle_mesh(skel_path)
-    faces_list_file_path = os.path.expanduser('~')+"/Desktop/selected_torax.txt"
+    faces_list_file_path = os.path.expanduser('~')+"/Desktop/selected_torax2.txt"
 
     with open(faces_list_file_path, 'r') as file:
         lines = file.readlines()
@@ -68,6 +70,22 @@ def compute_torax_projection(mesh):
     skel_face_vertices_idx = np.asarray(skel_model.triangles)[skel_faces]
     skel_vertex_positions = np.asarray(skel_model.vertices)
     smpl_faces_intersection = []
+    smpl_points_intersection = []
+    
+    # geometries = []
+    # # get 100 random faces
+
+    # for i, skel_face in enumerate(skel_faces[:100]):
+    #     # add a little sphere at the face center
+    #     skel_face_vertices = skel_face_vertices_idx[i]
+    #     skel_face_center = skel_vertex_positions[skel_face_vertices].mean(axis=0)
+    #     sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.005)
+    #     sphere.translate(skel_face_center, relative=False)
+    #     geometries.append(sphere)
+    #     print("Adding sphere number ",i)
+    # geometries.append(skel_model)
+    # o3d.visualization.draw(geometries)
+    pcd = o3d.t.geometry.PointCloud()
 
     for i, skel_face in enumerate(skel_faces):
 
@@ -75,15 +93,19 @@ def compute_torax_projection(mesh):
         skel_face_vertices = skel_face_vertices_idx[i]
         skel_face_center = skel_vertex_positions[skel_face_vertices].mean(axis=0)
 
-        
-        
         # get the local z axis of the human mesh
         rotm = mesh.get_rotation_matrix_from_xyz((0, 0, 0))
         
+
+
         
-        direction is the third column of the global rotation matrix
+        # direction is the third column of the global rotation matrix
         direction = -rotm[:, 2]
-        print("Computing :",skel_face_center,direction)
+
+        # compute direction as the radial vector from 
+
+
+        print("Computing :",skel_face_center,direction, " for face ",i,"/",len(skel_faces))
         ray = o3d.core.Tensor([ [*skel_face_center, *direction]], dtype=o3d.core.Dtype.Float32)
 
         # logger.info(f"start: {start}")
@@ -91,18 +113,45 @@ def compute_torax_projection(mesh):
     
         ans = scene.cast_rays(ray)
         smpl_faces_intersection.append(ans['primitive_ids'][0].cpu().numpy())
+        z_distance = ans['t_hit'][0].cpu().numpy()
+        smpl_points_intersection.append(skel_face_center + z_distance * direction)
     # paint triangles hit by the ray red
+    
+    pcd.point.positions = o3d.core.Tensor(smpl_points_intersection, dtype=o3d.core.Dtype.Float32)
+
     print("Intersecting faces: ",smpl_faces_intersection)
 
-    color_faces(humanoid, smpl_faces_intersection, [1.0, 0.0, 0.0])
+
+    pcd.point.colors = o3d.core.Tensor(np.zeros((len(smpl_points_intersection), 3)), dtype=o3d.core.Dtype.Float32)
+    pcd.point.colors[:, 0] = 1.0
+    # pcd.point.positions[:, 2] -= 0.1
     print("Saving mesh")
 
-    # Convert to legacy TriangleMesh for visualization
-    # legacy_humanoid = humanoid.to_legacy()
+    geometries = [{
+        "name": "humanoid",
+        "geometry": humanoid,
+        "material": mat_skin
+    },
+    {
+        "name": "skel",
+        "geometry": skel_model,
+        # "material": mat_sphere_transparent
+    },
+    {
+        "name": "pcd",
+        "geometry": pcd,
+        # "material": mat_sphere_transparent
+    }]
 
-    # Visualize the mesh
+    color_faces(humanoid, smpl_faces_intersection, [1.0, 0.0, 0.0])
     o3d.visualization.draw([humanoid])
+    
+    humanoid.compute_vertex_normals()
+    # skel_model.translate([0,0.0,-0.1],relative=True)
 
+    o3d.visualization.draw(geometries)
+    # reference_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.6, origin=mesh.get_center())
+    # o3d.visualization.draw_geometries([mesh, pcd.to_legacy(),skel_model,reference_frame], mesh_show_back_face=True)
 
 
 
