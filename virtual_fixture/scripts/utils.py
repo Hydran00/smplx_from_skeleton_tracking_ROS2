@@ -11,6 +11,11 @@ LUNG_US_SMPL_FACES = {
     13 : 6457, #661,#929      # right_basal_midclavicular
     14: 884, #595,#596       # right_upper_midclavicular
 }
+
+
+# LEFT_PARAVERTEBRAL_LINE_SKEL_FACES = [52835, 55372,56561,54119,52445, 48009,46624,43131,22791,24779,22158,25637]
+
+
 import numpy as np
 def to_z_up(mesh):
     R = mesh.get_rotation_matrix_from_xyz((-np.pi/2, 0, 0))
@@ -18,7 +23,89 @@ def to_z_up(mesh):
     # R = mesh.get_rotation_matrix_from_xyz((0, np.pi, 0))
     # mesh.rotate(R, center=[0, 0, 0])  
 
+
+def color_faces(mesh, faces, color):
+    """
+    Color the faces of a mesh with a specific color.
+    """
+    # Initialize triangle colors
+    triangle_colors = np.ones((len(mesh.triangle.indices), 3))
+
+    # Color specific faces red
+    for face in faces:
+        if face < len(triangle_colors):
+            triangle_colors[face] = color
+
+    # Set the colors to the mesh
+    mesh.triangle.colors = o3d.core.Tensor(triangle_colors, dtype=o3d.core.float32)
+
+
 import open3d as o3d
+import os
+import time
+def compute_torax_projection(mesh):
+    """
+    Computes the projection of the SKEL torax to the SMPL mesh
+    """
+    humanoid = o3d.t.geometry.TriangleMesh.from_legacy(mesh)
+    skel_path =os.path.expanduser('~')+"/SKEL_WS/SKEL/output/smpl_fit/smpl_fit_skel.obj"
+    skel_model = o3d.io.read_triangle_mesh(skel_path)
+    faces_list_file_path = os.path.expanduser('~')+"/Desktop/selected_torax.txt"
+
+    with open(faces_list_file_path, 'r') as file:
+        lines = file.readlines()
+        # lines are in the format a b c d e and I want e
+        skel_faces = [int(line.split()[4]) for line in lines]
+
+    skel_model_new  = o3d.t.geometry.TriangleMesh.from_legacy(skel_model)
+    color_faces(skel_model_new, skel_faces, [1.0, 0.0, 0.0])
+    o3d.visualization.draw([skel_model_new])
+
+    scene = o3d.t.geometry.RaycastingScene()
+    scene.add_triangles(humanoid)
+    
+
+    skel_face_vertices_idx = np.asarray(skel_model.triangles)[skel_faces]
+    skel_vertex_positions = np.asarray(skel_model.vertices)
+    smpl_faces_intersection = []
+
+    for i, skel_face in enumerate(skel_faces):
+
+        # get xyz of the face center
+        skel_face_vertices = skel_face_vertices_idx[i]
+        skel_face_center = skel_vertex_positions[skel_face_vertices].mean(axis=0)
+
+        
+        
+        # get the local z axis of the human mesh
+        rotm = mesh.get_rotation_matrix_from_xyz((0, 0, 0))
+        
+        
+        direction is the third column of the global rotation matrix
+        direction = -rotm[:, 2]
+        print("Computing :",skel_face_center,direction)
+        ray = o3d.core.Tensor([ [*skel_face_center, *direction]], dtype=o3d.core.Dtype.Float32)
+
+        # logger.info(f"start: {start}")
+        # logger.info(f"direction: {direction}")
+    
+        ans = scene.cast_rays(ray)
+        smpl_faces_intersection.append(ans['primitive_ids'][0].cpu().numpy())
+    # paint triangles hit by the ray red
+    print("Intersecting faces: ",smpl_faces_intersection)
+
+    color_faces(humanoid, smpl_faces_intersection, [1.0, 0.0, 0.0])
+    print("Saving mesh")
+
+    # Convert to legacy TriangleMesh for visualization
+    # legacy_humanoid = humanoid.to_legacy()
+
+    # Visualize the mesh
+    o3d.visualization.draw([humanoid])
+
+
+
+
 def get_protocol_areas_center(mesh):
     """
     Get the centers of the areas of interest in the mesh for the lung US protocol.

@@ -40,7 +40,10 @@ class VirtualFixture(Node):
         self.areas_pub = self.create_publisher(Areas, 'areas', 1)
         self.areas = None
         self.radius = 0.05
-        self.compute_VF()
+        # self.compute_VF()
+
+        mesh =o3d.io.read_triangle_mesh(self.load_path)
+        utils.compute_torax_projection(mesh)
         # self.current_area_to_scan = 11
         # self.transitioning_between_areas = True
     
