@@ -1,9 +1,3 @@
-# LUNG_US_SMPL_VERTICES = {
-#     "right_basal_midclavicular" : 928, #661,#929      # 13
-#     "right_upper_midclavicular": 594, #595,#596       # 14
-#     "left_basal_midclavicular" : 4415, #4414,#4417  # 11
-#     "left_upper_midclavicular": 4082, #4084,#4085   # 12
-# }
 LUNG_US_SMPL_FACES = {
     # hand labelled face indices
     11 : 13345, #4414,#4417  # left_basal_midclavicular
@@ -11,10 +5,6 @@ LUNG_US_SMPL_FACES = {
     13 : 6457, #661,#929      # right_basal_midclavicular
     14: 884, #595,#596       # right_upper_midclavicular
 }
-
-
-# LEFT_PARAVERTEBRAL_LINE_SKEL_FACES = [52835, 55372,56561,54119,52445, 48009,46624,43131,22791,24779,22158,25637]
-
 
 import numpy as np
 def to_z_up(mesh):
@@ -44,7 +34,7 @@ import open3d as o3d
 import os
 import time
 from materials import mat_sphere_transparent, mat_skin
-
+from tqdm import tqdm
 def compute_torax_projection(mesh):
     """
     Computes the projection of the SKEL torax to the SMPL mesh
@@ -52,13 +42,19 @@ def compute_torax_projection(mesh):
     humanoid = o3d.t.geometry.TriangleMesh.from_legacy(mesh)
     skel_path =os.path.expanduser('~')+"/SKEL_WS/SKEL/output/smpl_fit/smpl_fit_skel.obj"
     skel_model = o3d.io.read_triangle_mesh(skel_path)
-    faces_list_file_path = os.path.expanduser('~')+"/Desktop/full_torax.txt"
+    faces_list_file_path = os.path.expanduser('~')+"/SKEL_WS/skel_regions/full_torax.txt"
+    # skel_center_face_idx_path = os.path.expanduser('~')+"/SKEL_WS/skel_regions/skel_center.txt"
     projection_method = "radial" # "linear" or "radial"
     
     with open(faces_list_file_path, 'r') as file:
         lines = file.readlines()
         # lines are in the format a b c d e and I want e
         skel_faces = [int(line.split()[4]) for line in lines]
+    
+    # with open(skel_center_face_idx_path, 'r') as file:
+    #     lines = file.readlines()
+    #     skel_center_face_idx = [int(line.split()[4]) for line in lines]
+    skel_center_vertex_id = 25736
 
     skel_model_new  = o3d.t.geometry.TriangleMesh.from_legacy(skel_model)
     color_faces(skel_model_new, skel_faces, [1.0, 0.0, 0.0])
@@ -70,12 +66,13 @@ def compute_torax_projection(mesh):
 
     skel_face_vertices_idx = np.asarray(skel_model.triangles)[skel_faces]
     skel_vertex_positions = np.asarray(skel_model.vertices)
+    skel_center = skel_vertex_positions[skel_center_vertex_id]
     smpl_faces_intersection = []
     smpl_points_intersection = []
     
     pcd = o3d.t.geometry.PointCloud()
 
-    for i, skel_face in enumerate(skel_faces):
+    for i, skel_face in enumerate(tqdm(skel_faces)):
 
         # get xyz of the face center
         skel_face_vertices = skel_face_vertices_idx[i]
@@ -94,7 +91,7 @@ def compute_torax_projection(mesh):
         else:
             raise ValueError("Invalid projection method")
 
-        print("Computing :",skel_face_center,direction, " for face ",i,"/",len(skel_faces))
+        # print("Computing :",skel_face_center,direction, " for face ",i,"/",len(skel_faces))
         ray = o3d.core.Tensor([ [*skel_face_center, *direction]], dtype=o3d.core.Dtype.Float32)
         ans = scene.cast_rays(ray)
         smpl_faces_intersection.append(ans['primitive_ids'][0].cpu().numpy())
@@ -107,7 +104,8 @@ def compute_torax_projection(mesh):
     pcd.point.colors[:, 0] = 1.0
     # pcd.point.positions[:, 2] -= 0.1
 
-    geometries = [{
+    geometries = [
+    {
         "name": "humanoid",
         "geometry": humanoid,
         "material": mat_skin
@@ -121,7 +119,12 @@ def compute_torax_projection(mesh):
         "name": "pcd",
         "geometry": pcd,
         # "material": mat_sphere_transparent
-    }]
+    },
+    {
+        "name": "mesh center",
+        "geometry": o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2, origin=skel_center),
+    }
+    ]
 
     color_faces(humanoid, smpl_faces_intersection, [1.0, 0.0, 0.0])
     o3d.visualization.draw([humanoid])
@@ -132,7 +135,7 @@ def compute_torax_projection(mesh):
     o3d.visualization.draw(geometries)
     # reference_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.6, origin=mesh.get_center())
     # o3d.visualization.draw_geometries([mesh, pcd.to_legacy(),skel_model,reference_frame], mesh_show_back_face=True)
-
+    
 
 
 def get_protocol_areas_center(mesh):

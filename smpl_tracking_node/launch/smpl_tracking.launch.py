@@ -13,6 +13,7 @@ import os
 
 
 def generate_launch_description():
+
     ld = LaunchDescription()
 
     parser = Node(
@@ -26,7 +27,7 @@ def generate_launch_description():
         parameters=[{
             "mirror":True,
             "model_type":"smpl", # smpl or smplx
-            "model_path": expanduser("~")+ "/models/smpl/smpl_male.pkl"
+            "model_path": expanduser("~")+ '/SKEL_WS/SKEL/models/smpl/SMPL_MALE.pkl',
             # "model_path": expanduser("~")+ "/models/smplx/SMPLX_MALE.npz"
         }
         ]

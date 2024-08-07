@@ -15,6 +15,7 @@ from smpl_params_sender import SMPLParamsSender
 from smpl_optmizer import SMPLModelOptimizer
 import time
 from utils import compute_distance_from_pelvis_joint_to_surface, block
+import utils
 @dataclass
 class SMPLParams:
     betas: torch.Tensor
@@ -75,7 +76,7 @@ class SMPLXTracking(Node):
             self.get_logger().error("Model path does not exist")
             exit(1)
         
-        
+        self.timer = self.create_timer(0.03, self.update_model)
         # self.get_logger().info("Loading model: {}".format(self.model_type))
         # Load SMPLX/SMPL model
         if(self.model_type == 'smplx'):
@@ -167,7 +168,7 @@ class SMPLXTracking(Node):
             
         self.current_body_pose = msg.local_orientation_per_joint
         
-        self.update_model()
+        # self.update_model()
         
 
     def callback_pc(self, msg):
@@ -204,17 +205,7 @@ class SMPLXTracking(Node):
             self.viz.add_geometry(self.skel_mesh)
             self.first_skel_mesh = False
             self.get_logger().info("First skel mesh received")
-            # self.viz.update_geometry(self.skel_mesh)
-            # break only if space is pressed
-                
-            # remove the smpl mesh
 
-        # else:
-        #         self.param_sender.receive_skel(self.skel_mesh)
-
-        #     self.viz.poll_events()
-        #     self.viz.update_renderer()
-    
 
     def update_model(self):
         """Draw the SMPLX model with the current pose."""
@@ -325,15 +316,7 @@ class SMPLXTracking(Node):
 
         self.mesh.vertices = o3d.utility.Vector3dVector(vertices)
         self.mesh.triangles = o3d.utility.Vector3iVector(faces)        
-        
-        # if not self.first_mesh and not OPTIMIZE_BETAS:
-        #     while True:
-        #         self.viz.update_geometry(self.mesh)
-        #         self.viz.poll_events()
-        #         self.viz.update_renderer()
-        #         time.sleep(0.03)
 
-        
         landmarks_smpl = output.joints.detach().cpu().numpy()
         landmarks_smpl = landmarks_smpl[:, :24, :].reshape(1, 72)
         
@@ -356,6 +339,7 @@ class SMPLXTracking(Node):
                 self.spheres_smpl.append(sphere_smpl)
                 self.viz.add_geometry(sphere)
                 self.viz.add_geometry(sphere_smpl)
+
         else:
             self.get_logger().info("Updating mesh received")
             self.viz.update_geometry(self.mesh)
@@ -365,16 +349,6 @@ class SMPLXTracking(Node):
                 self.viz.update_geometry(self.spheres[i])
                 self.viz.update_geometry(self.spheres_smpl[i])
 
-        # if self.betas_optimized:
-        #     while True:
-        #         self.viz.poll_events()
-        #         self.viz.update_renderer()
-        #         time.sleep(0.03)
-                # break only if space is pressed
-                # if self.viz.get_window().was_key_pressed(o3d.visualization.KeyEvent.KEY_Space):
-                #     break
-        # block(self.viz)
-        
         # GET SKEL MODEL
         if self.betas_optimized:
             self.viz.remove_geometry(self.mesh)
