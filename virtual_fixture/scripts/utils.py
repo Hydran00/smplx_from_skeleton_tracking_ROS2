@@ -67,6 +67,10 @@ def compute_torax_projection(mesh):
     skel_face_vertices_idx = np.asarray(skel_model.triangles)[skel_faces]
     skel_vertex_positions = np.asarray(skel_model.vertices)
     skel_center = skel_vertex_positions[skel_center_vertex_id]
+    # compute skel center taking the avg betweem min and max x and z
+
+    print("Skel center is ",skel_center)
+    time.sleep(2.0)
     smpl_faces_intersection = []
     smpl_points_intersection = []
     
@@ -84,7 +88,7 @@ def compute_torax_projection(mesh):
             rotm = mesh.get_rotation_matrix_from_xyz((0, 0, 0))
             direction = -rotm[:, 2]
         elif projection_method == "radial":
-            direction_start = mesh.get_center()
+            direction_start = skel_center #mesh.get_center()
             direction_start[1] = skel_face_center[1]
             direction_end = skel_face_center
             direction = direction_end - direction_start

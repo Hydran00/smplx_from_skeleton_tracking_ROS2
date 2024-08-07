@@ -51,7 +51,7 @@ class SMPLModelOptimizer:
              
         self.optimize(logger, params=[self.global_position, self.global_orient], loss_type='transl', num_iterations=200)
         
-        self.optimize(logger, params=[self.body_pose], lr=0.001, loss_type='pose', num_iterations=350)
+        self.optimize(logger, params=[self.body_pose], lr=0.001, loss_type='pose', num_iterations=300)
         # reset head position
         # translate the body to the surface
         
@@ -63,7 +63,7 @@ class SMPLModelOptimizer:
         # optimize arms and legs again
         self.arms_leg_idx = [3,4,9,10,17,18,19,20,21,22]
         self.arms_leg_params = torch.cat([self.body_pose[0, idx*3:idx*3+3] for idx in self.arms_leg_idx], dim=0).reshape(1, 30).to('cuda:0').detach().requires_grad_()
-        self.optimize(logger, params=[self.body_pose], lr=0.001, loss_type='pose', num_iterations=200)
+        self.optimize(logger, params=[self.body_pose], lr=0.001, loss_type='pose', num_iterations=300)
         
         with torch.no_grad():
             for i, idx in enumerate(self.arms_leg_idx):
