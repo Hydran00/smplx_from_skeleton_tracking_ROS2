@@ -35,6 +35,7 @@ import os
 import time
 from materials import mat_sphere_transparent, mat_skin
 from tqdm import tqdm
+from ament_index_python.packages import get_package_share_directory
 def compute_torax_projection(mesh):
     """
     Computes the projection of the SKEL torax to the SMPL mesh
@@ -42,8 +43,7 @@ def compute_torax_projection(mesh):
     humanoid = o3d.t.geometry.TriangleMesh.from_legacy(mesh)
     skel_path =os.path.expanduser('~')+"/SKEL_WS/SKEL/output/smpl_fit/smpl_fit_skel.obj"
     skel_model = o3d.io.read_triangle_mesh(skel_path)
-    faces_list_file_path = os.path.expanduser('~')+"/SKEL_WS/skel_regions/full_torax.txt"
-    # skel_center_face_idx_path = os.path.expanduser('~')+"/SKEL_WS/skel_regions/skel_center.txt"
+    faces_list_file_path = get_package_share_directory("virtual_fixture")+ '/skel_regions/full_torax.txt'
     projection_method = "radial" # "linear" or "radial"
     
     with open(faces_list_file_path, 'r') as file:

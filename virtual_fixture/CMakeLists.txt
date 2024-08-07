@@ -17,7 +17,7 @@ install(PROGRAMS
   DESTINATION lib/${PROJECT_NAME}
 )
 
-install(DIRECTORY launch rviz
+install(DIRECTORY launch rviz skel_regions
   DESTINATION share/${PROJECT_NAME}
 )
 
