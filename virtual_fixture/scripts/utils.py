@@ -44,7 +44,7 @@ def compute_torax_projection(mesh):
     humanoid = o3d.t.geometry.TriangleMesh.from_legacy(mesh)
     skel_path =os.path.expanduser('~')+"/SKEL_WS/SKEL/output/smpl_fit/smpl_fit_skel.obj"
     skel_model = o3d.io.read_triangle_mesh(skel_path)
-    faces_list_file_path = get_package_share_directory("virtual_fixture")+ '/skel_regions/full_torax.txt'
+    faces_list_file_path = get_package_share_directory("virtual_fixture")+ '/skel_regions/3.txt'
     projection_method = "radial" # "linear" or "radial"
     
     with open(faces_list_file_path, 'r') as file:
@@ -55,7 +55,8 @@ def compute_torax_projection(mesh):
     # with open(skel_center_face_idx_path, 'r') as file:
     #     lines = file.readlines()
     #     skel_center_face_idx = [int(line.split()[4]) for line in lines]
-    skel_center_vertex_id = 25736
+    
+    # skel_center_vertex_id = 25736
 
     skel_model_new  = o3d.t.geometry.TriangleMesh.from_legacy(skel_model)
     color_faces(skel_model_new, skel_faces, [1.0, 0.0, 0.0])
@@ -67,7 +68,12 @@ def compute_torax_projection(mesh):
 
     skel_face_vertices_idx = np.asarray(skel_model.triangles)[skel_faces]
     skel_vertex_positions = np.asarray(skel_model.vertices)
-    skel_center = skel_vertex_positions[skel_center_vertex_id]
+    # skel_center = skel_vertex_positions[skel_center_vertex_id]
+    
+    # compute the mean of every vertex in the skel faces
+    skel_center = np.mean([skel_vertex_positions[skel_face].mean(axis=0) for skel_face in skel_face_vertices_idx],axis=0)
+    
+    
     # compute skel center taking the avg betweem min and max x and z
 
     print("Skel center is ",skel_center)
