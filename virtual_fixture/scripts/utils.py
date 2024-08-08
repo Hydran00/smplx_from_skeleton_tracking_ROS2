@@ -40,6 +40,7 @@ def compute_torax_projection(mesh):
     """
     Computes the projection of the SKEL torax to the SMPL mesh
     """
+
     humanoid = o3d.t.geometry.TriangleMesh.from_legacy(mesh)
     skel_path =os.path.expanduser('~')+"/SKEL_WS/SKEL/output/smpl_fit/smpl_fit_skel.obj"
     skel_model = o3d.io.read_triangle_mesh(skel_path)
@@ -70,7 +71,6 @@ def compute_torax_projection(mesh):
     # compute skel center taking the avg betweem min and max x and z
 
     print("Skel center is ",skel_center)
-    time.sleep(2.0)
     smpl_faces_intersection = []
     smpl_points_intersection = []
     
@@ -79,29 +79,38 @@ def compute_torax_projection(mesh):
     for i, skel_face in enumerate(tqdm(skel_faces)):
 
         # get xyz of the face center
-        skel_face_vertices = skel_face_vertices_idx[i]
-        skel_face_center = skel_vertex_positions[skel_face_vertices].mean(axis=0)
+        # skel_face_vertices = skel_face_vertices_idx[i]
+        # skel_face_center = skel_vertex_positions[skel_face_vertices].mean(axis=0)
+        skel_face_vertices = []
+        skel_face_vertices.append(skel_vertex_positions[skel_face_vertices_idx[i][0]])
+        skel_face_vertices.append(skel_vertex_positions[skel_face_vertices_idx[i][1]])
+        skel_face_vertices.append(skel_vertex_positions[skel_face_vertices_idx[i][2]])
+        
 
         # get the local z axis of the human mesh
         # rotm = mesh.get_rotation_matrix_from_xyz((0, 0, 0))
-        if projection_method == "linear":
-            rotm = mesh.get_rotation_matrix_from_xyz((0, 0, 0))
-            direction = -rotm[:, 2]
-        elif projection_method == "radial":
-            direction_start = skel_center #mesh.get_center()
-            direction_start[1] = skel_face_center[1]
-            direction_end = skel_face_center
+        # if projection_method == "linear":
+        #     rotm = mesh.get_rotation_matrix_from_xyz((0, 0, 0))
+        #     direction = -rotm[:, 2]
+        # elif projection_method == "radial":
+        for i in range(3):
+            direction_start = skel_center
+            direction_start[1] = skel_face_vertices[i][1]
+            direction_end = skel_face_vertices[i]
             direction = direction_end - direction_start
-        else:
-            raise ValueError("Invalid projection method")
+            ray = o3d.core.Tensor([ [*skel_face_vertices[i], *direction]], dtype=o3d.core.Dtype.Float32)
+            ans = scene.cast_rays(ray)
+            smpl_faces_intersection.append(ans['primitive_ids'][0].cpu().numpy())
+            z_distance = ans['t_hit'][0].cpu().numpy()
+            smpl_points_intersection.append(skel_face_vertices[i] + z_distance * direction)
+        # else:
+        #     raise ValueError("Invalid projection method")
 
         # print("Computing :",skel_face_center,direction, " for face ",i,"/",len(skel_faces))
-        ray = o3d.core.Tensor([ [*skel_face_center, *direction]], dtype=o3d.core.Dtype.Float32)
-        ans = scene.cast_rays(ray)
-        smpl_faces_intersection.append(ans['primitive_ids'][0].cpu().numpy())
-        z_distance = ans['t_hit'][0].cpu().numpy()
-        smpl_points_intersection.append(skel_face_center + z_distance * direction)
     # paint triangles hit by the ray red
+    
+    # filters out nans
+    smpl_points_intersection = [point for point in smpl_points_intersection if not np.isnan(point).any()]
     
     pcd.point.positions = o3d.core.Tensor(smpl_points_intersection, dtype=o3d.core.Dtype.Float32)
     pcd.point.colors = o3d.core.Tensor(np.zeros((len(smpl_points_intersection), 3)), dtype=o3d.core.Dtype.Float32)
@@ -140,7 +149,11 @@ def compute_torax_projection(mesh):
     # reference_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.6, origin=mesh.get_center())
     # o3d.visualization.draw_geometries([mesh, pcd.to_legacy(),skel_model,reference_frame], mesh_show_back_face=True)
     
-
+    # dump pointcloud to file
+    pcd_legacy = pcd.to_legacy()
+    o3d.io.write_point_cloud("pcd.ply", pcd_legacy, write_ascii=True) 
+    print("Point cloud saved to pcd.ply")
+    return pcd_legacy
 
 def get_protocol_areas_center(mesh):
     """
@@ -206,3 +219,29 @@ def publish_mesh(publisher,path, id, rgba):
     marker.color.a = rgba[3]
     print("Publishing mesh with a : ",marker.color.a)
     publisher.publish(marker)
+    
+def get_flat_surface_point_cloud(points_num,spacing=0.1):
+    # Parameters
+    num_points_per_side = int(np.sqrt(points_num))  # Assuming a square grid
+    side_length = spacing * (num_points_per_side - 1)
+
+    # Generate the points on the XY plane with Z = 0
+    x = np.linspace(0, side_length, num_points_per_side)
+    y = np.linspace(0, side_length, num_points_per_side)
+    xx, yy = np.meshgrid(x, y)
+    zz = np.zeros_like(xx)  # Flat surface, Z = 0
+
+    # Combine into a single array of points
+    points = np.vstack((xx.ravel(), yy.ravel(), zz.ravel())).T
+
+    # Create a PointCloud object
+    point_cloud = o3d.geometry.PointCloud()
+
+    # Assign the points to the point cloud
+    point_cloud.points = o3d.utility.Vector3dVector(points)
+
+    # Optionally, assign colors to the points (e.g., all points white)
+    colors = np.ones_like(points)  # White color
+    point_cloud.colors = o3d.utility.Vector3dVector(colors)
+    
+    return point_cloud
