@@ -53,10 +53,6 @@ def compute_torax_projection(mesh):
         # lines are in the format a b c d e and I want e
         skel_faces = [int(line.split()[4]) for line in lines]
     
-    # with open(skel_center_face_idx_path, 'r') as file:
-    #     lines = file.readlines()
-    #     skel_center_face_idx = [int(line.split()[4]) for line in lines]
-    
     skel_center_vertex_id = 25736
 
     skel_model_new  = o3d.t.geometry.TriangleMesh.from_legacy(skel_model)
@@ -74,9 +70,7 @@ def compute_torax_projection(mesh):
     skel_center = np.mean([skel_vertex_positions[skel_face].mean(axis=0) for skel_face in skel_face_vertices_idx],axis=0)
     skel_center = skel_vertex_positions[skel_center_vertex_id]
     
-    
     # compute skel center taking the avg betweem min and max x and z
-
     print("Skel center is ",skel_center)
     smpl_faces_intersection = []
     smpl_points_intersection = []
@@ -172,31 +166,12 @@ def compute_torax_projection(mesh):
         triangle_colors[i] = [1, 0, 0]
     filtered_mesh.triangle.colors = o3d.core.Tensor(triangle_colors, dtype=o3d.core.float32)
     o3d.visualization.draw([filtered_mesh])
-        # else:
-        #     raise ValueError("Invalid projection method")
-
-        # print("Computing :",skel_face_center,direction, " for face ",i,"/",len(skel_faces))
-    # paint triangles hit by the ray red
-    
     # filters out nans
     smpl_points_intersection = [point for point in smpl_points_intersection if not np.isnan(point).any()]
     
     pcd.point.positions = o3d.core.Tensor(smpl_points_intersection, dtype=o3d.core.Dtype.Float32)
     pcd.point.colors = o3d.core.Tensor(np.zeros((len(smpl_points_intersection), 3)), dtype=o3d.core.Dtype.Float32)
     pcd.point.colors[:, 0] = 1.0
-    # pcd.point.positions[:, 2] -= 0.1
-
-
-    # compute the distance between the skel and the skin
-    # distance_skel_skin = 0.02
-    
-    # # scale the skel mesh by the distance   
-    # # Compute the bounding box to get an idea of the size of the mesh
-    # bbox = skel_model.get_axis_aligned_bounding_box()
-    # bbox_size = np.max(bbox.get_extent())  # Maximum dimension of the bounding box
-    # scaling_factor = 1 + (distance_skel_skin / bbox_size) + 0.1
-    # skel_model.scale(scaling_factor,center=skel_model.get_center())
-
 
     geometries = [
     {
@@ -220,20 +195,14 @@ def compute_torax_projection(mesh):
     }
     ]
 
-    # color_faces(humanoid, smpl_faces_intersection, [1.0, 0.0, 0.0])
-    o3d.visualization.draw([humanoid])
-    
     humanoid.compute_vertex_normals()
-    # skel_model.translate([0,0.0,-0.1],relative=True)
-
     o3d.visualization.draw(geometries)
-    # reference_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.6, origin=mesh.get_center())
-    # o3d.visualization.draw_geometries([mesh, pcd.to_legacy(),skel_model,reference_frame], mesh_show_back_face=True)
-    
     # dump pointcloud to file
     pcd_legacy = pcd.to_legacy()
     o3d.io.write_point_cloud("pcd.ply", pcd_legacy, write_ascii=True) 
-    print("Point cloud saved to pcd.ply")
+    # dump mesh to file
+    o3d.io.write_triangle_mesh("projected_skel.ply", filtered_mesh.to_legacy(), write_ascii=True)
+    print("Done")
     return pcd_legacy
 
 def get_protocol_areas_center(mesh):
