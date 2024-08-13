@@ -37,7 +37,7 @@ from materials import mat_sphere_transparent, mat_skin
 from tqdm import tqdm
 from ament_index_python.packages import get_package_share_directory
 
-def compute_torax_projection(mesh):
+def compute_torax_projection(mesh, output_path):
     """
     Computes the projection of the SKEL torax to the SMPL mesh
     """
@@ -139,33 +139,33 @@ def compute_torax_projection(mesh):
         
     # Set the area threshold
     area_threshold = 0.0005
+    edge_threshold = 0.025
 
     # Find the triangles that have an area below the threshold
     valid_triangles = []
-    valid_vertices = []
     for tri in triangles:
         v1, v2, v3 = vertices[tri]
         area = triangle_area(v1, v2, v3)
         if area <= area_threshold:
             # ensure that edges are smaller than 0.02 meter
-            if (np.linalg.norm(v1-v2) < 0.25) and (np.linalg.norm(v2-v3) < 0.02) and (np.linalg.norm(v1-v3) < 0.02):
+            if (np.linalg.norm(v1-v2) < edge_threshold) and (np.linalg.norm(v2-v3) < edge_threshold) and (np.linalg.norm(v1-v3) < edge_threshold):
                 valid_triangles.append(tri)
-                valid_vertices.extend([v1, v2, v3])
          
     # Create a new mesh with the filtered triangles
     valid_triangles = np.array(valid_triangles)
     filtered_mesh = o3d.geometry.TriangleMesh()
     filtered_mesh = o3d.t.geometry.TriangleMesh.from_legacy(filtered_mesh)
-    filtered_mesh.vertex.positions = o3d.core.Tensor(valid_vertices, dtype=o3d.core.Dtype.Float32)
+    filtered_mesh.vertex.positions = o3d.core.Tensor(vertices, dtype=o3d.core.Dtype.Float32)
     filtered_mesh.triangle.indices = o3d.core.Tensor(valid_triangles, dtype=o3d.core.Dtype.Int32)
-    filtered_mesh.compute_vertex_normals()
+    # filtered_mesh.compute_vertex_normals()
     # # filtered_mesh.paint_uniform_color([1, 0, 0])
     triangle_colors = np.ones((len(filtered_mesh.triangle.indices), 3))
     # triangle_colors[::3] = [1, 0, 0]
     for i in range(0,len(triangle_colors)):
         triangle_colors[i] = [1, 0, 0]
     filtered_mesh.triangle.colors = o3d.core.Tensor(triangle_colors, dtype=o3d.core.float32)
-    o3d.visualization.draw([filtered_mesh])
+    filtered_mesh.compute_vertex_normals()
+    # o3d.visualization.draw([filtered_mesh])
     # filters out nans
     smpl_points_intersection = [point for point in smpl_points_intersection if not np.isnan(point).any()]
     
@@ -196,15 +196,42 @@ def compute_torax_projection(mesh):
     ]
 
     humanoid.compute_vertex_normals()
-    o3d.visualization.draw(geometries)
+    # o3d.visualization.draw(geometries)
     # dump pointcloud to file
     pcd_legacy = pcd.to_legacy()
     o3d.io.write_point_cloud("pcd.ply", pcd_legacy, write_ascii=True) 
     # dump mesh to file
-    o3d.io.write_triangle_mesh("projected_skel.ply", filtered_mesh.to_legacy(), write_ascii=True)
+    print("Filling holes and saving the mesh")
+    filtered_mesh.fill_holes(hole_size=0.02)
     print("Done")
-    return pcd_legacy
 
+    return filtered_mesh
+
+def visualize_mesh_normals(surface):
+    surface.compute_vertex_normals()
+
+    # Create a LineSet for visualizing normals
+    lines = []
+    colors = []
+    points = np.asarray(surface.vertices)
+    normals = np.asarray(surface.triangle_normals)
+    # Generate lines for each triangle normal
+    for i, triangle in enumerate(np.asarray(surface.triangles)):
+        v0, v1, v2 = triangle
+        triangle_center = (points[v0] + points[v1] + points[v2]) / 3
+        normal_start = triangle_center
+        normal_end = triangle_center + normals[i] * 0.1  # Adjust length of the normal line
+
+        lines.append([len(points) + 2*i, len(points) + 2*i + 1])
+        points = np.vstack([points, normal_start, normal_end])
+        colors.extend([[1, 0, 0]] * 2)  # Red color for normals
+    lines = np.array(lines)
+    line_set = o3d.geometry.LineSet()
+    line_set.points = o3d.utility.Vector3dVector(points)
+    line_set.lines = o3d.utility.Vector2iVector(lines)
+    line_set.colors = o3d.utility.Vector3dVector(colors)
+    return line_set
+    
 def get_protocol_areas_center(mesh):
     """
     Get the centers of the areas of interest in the mesh for the lung US protocol.
@@ -246,14 +273,14 @@ def clear_meshes(publisher):
     marker = Marker()
     marker.action = marker.DELETEALL
     publisher.publish(marker)
-def publish_mesh(publisher,path, id, rgba):
+
+def publish_mesh(publisher,path, id, rgba=[1.0, 0.0, 0.0, 0.6]):
     """
     Publish a mesh to the Rviz visualization.
     """
     marker = Marker()
     # clear marker with id 0
     marker.id = id
-    marker.action = marker.DELETE
     marker.type = marker.MESH_RESOURCE
     marker.header.frame_id = "base_link"
     marker.action = marker.ADD
@@ -267,7 +294,7 @@ def publish_mesh(publisher,path, id, rgba):
     marker.color.g = rgba[1]
     marker.color.b = rgba[2]
     marker.color.a = rgba[3]
-    print("Publishing mesh with a : ",marker.color.a)
+    print("Publishing mesh with a : ",marker.color.a, " and path ", marker.mesh_resource)
     publisher.publish(marker)
     
 def get_flat_surface_point_cloud(points_num,spacing=0.1):

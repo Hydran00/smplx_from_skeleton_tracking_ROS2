@@ -22,6 +22,7 @@ import numpy as np
 import scipy 
 import utils
 
+
 class VirtualFixture(Node):
     def __init__(self):
         super().__init__('virtual_fixture')
@@ -41,9 +42,27 @@ class VirtualFixture(Node):
         self.areas = None
         self.radius = 0.05
         # self.compute_VF()
-
-        mesh =o3d.io.read_triangle_mesh(self.load_path)
-        utils.compute_torax_projection(mesh)
+        
+        mesh = o3d.io.read_triangle_mesh(self.load_path)
+        self.output_path = os.path.expanduser('~')+"/SKEL_WS/ros2_ws/projected_skel.ply"
+        
+        # rib_cage = utils.compute_torax_projection(mesh, self.output_path)
+        # o3d.visualization.draw([rib_cage])
+        # rib_cage = rib_cage.to_legacy()
+        
+        rib_cage = o3d.io.read_triangle_mesh(self.output_path)
+        rib_cage_new = o3d.t.geometry.TriangleMesh.from_legacy(rib_cage)
+        rib_cage_new = rib_cage_new.extrude_linear([0,0,-0.05])
+        o3d.visualization.draw_geometries([rib_cage_new.to_legacy()])
+        rib_cage = rib_cage_new.to_legacy()
+        
+        self.transform_mesh(rib_cage)
+        o3d.io.write_triangle_mesh(self.output_path, rib_cage, write_ascii=True)
+        self.get_logger().info("Clear rviz")
+        utils.clear_meshes(self.mesh_publisher)
+        time.sleep(1.0)
+        self.get_logger().info("Sending rib cage to rviz")
+        utils.publish_mesh(self.mesh_publisher, self.output_path, 0)
         # self.current_area_to_scan = 11
         # self.transitioning_between_areas = True
     
@@ -59,40 +78,7 @@ class VirtualFixture(Node):
         if self.areas is not None:
             self.areas_pub.publish(self.areas)
     
-    def compute_VF(self): 
-        utils.clear_meshes(self.mesh_publisher)
-        mesh =o3d.io.read_triangle_mesh(self.load_path)
-        self.transform_mesh(mesh)
-        o3d.io.write_triangle_mesh(self.skin_save_path, mesh)
-        self.mesh = mesh
-        self.get_logger().info("Mesh has been saved, sending it to Rviz")
-        i=0
-        while i<10:
-            utils.publish_mesh(self.mesh_publisher, self.skin_save_path, 0, rgba=[0.5,0.5,0.5,0.5])
-            i+=1
-        
-        areas = Areas()
-        # radius is the first element
-        for i in range(14):
-            areas.areas_radius[i] = 0.05
-    
-        self.areas_center = utils.get_protocol_areas_center(mesh)
-        self.get_logger().info("Areas center: "+str(self.areas_center))
-        self.spheres_dict = utils.create_spherical_areas(self.areas_center, self.radius)
-        for i,sphere in enumerate(self.spheres_dict.values()):
-            idx = list(self.spheres_dict.keys())[i]
-            areas_save_path = self.areas_save_path_prefix+str(idx)+".obj"
-            o3d.io.write_triangle_mesh(areas_save_path, sphere)
-            self.visualizer.add_geometry(sphere)
-            self.get_logger().info(f"Sphere {idx} has been saved in {areas_save_path}, sending it to Rviz")
-            utils.publish_mesh(self.mesh_publisher, areas_save_path, idx, rgba=[1.0,0.0,0.0,0.5])
-            areas.centers[idx-1].x = self.areas_center[i][0]
-            areas.centers[idx-1].y = self.areas_center[i][1]
-            areas.centers[idx-1].z = self.areas_center[i][2]
-        # publish the areas center
-        self.areas = areas
-        self.get_logger().info("Publishing areas : "+str(areas))
-        self.areas_pub.publish(areas)
+
         
 def main(args=None):
     rclpy.init(args=args)

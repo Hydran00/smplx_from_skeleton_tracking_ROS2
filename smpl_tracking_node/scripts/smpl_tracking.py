@@ -14,8 +14,8 @@ from dataclasses import dataclass
 from smpl_params_sender import SMPLParamsSender
 from smpl_optmizer import SMPLModelOptimizer
 import time
-from utils import compute_distance_from_pelvis_joint_to_surface, block
-import utils
+from utils import compute_distance_from_pelvis_joint_to_surface
+
 @dataclass
 class SMPLParams:
     betas: torch.Tensor
@@ -155,7 +155,7 @@ class SMPLXTracking(Node):
 
     def callback_bd(self, msg):
         """Callback for body tracking data."""
-        # self.get_logger().info("Received body tracking data")
+        self.get_logger().info("Received body tracking data")
         for i in range(NUM_BODY_JOINTS+3):
                 self.landmarks[0][i*3] = msg.keypoints[self.map[i]].position.x
                 self.landmarks[0][i*3 + 1] = msg.keypoints[self.map[i]].position.y
@@ -173,16 +173,23 @@ class SMPLXTracking(Node):
 
     def callback_pc(self, msg):
         """Callback for point cloud data."""
-        # self.get_logger().info("Received point cloud data")            
+        self.get_logger().info("Received point cloud data")            
         fromPointCloud2(self, self.point_cloud, msg)
-        if self.first_point_cloud:
-            self.viz.add_geometry(self.point_cloud)
-            self.first_point_cloud = False
-    
+        self.get_logger().info("Converted")            
+        
         if(self.point_cloud.is_empty()):
             self.get_logger().error("Point cloud is empty")
             return
+       
+        if self.first_point_cloud:
+
+            self.viz.add_geometry(self.point_cloud)
+            self.get_logger().info("Added")            
+            self.first_point_cloud = False
+    
+
         self.viz.update_geometry(self.point_cloud)
+        self.get_logger().info("Updated")            
         
         self.viz.poll_events()
         self.viz.update_renderer()

@@ -18,7 +18,7 @@ class SMPLModelOptimizer:
         self.body_pose = torch.zeros((1, 66), dtype=torch.float32, device='cuda:0', requires_grad=True)
 
         self.chamfer_distance = ChamferDistance().to('cuda:0')
-        self.prior = MaxMixturePrior(prior_folder=os.path.expanduser('~')+'/models/prior', num_gaussians=8).to('cuda:0')
+        self.prior = MaxMixturePrior(prior_folder=os.path.expanduser('~')+'/SKEL_WS/SKEL/models/prior', num_gaussians=8).to('cuda:0')
         self.landmark_loss = LandmarkLoss().to('cuda:0')
         self.mesh = o3d.geometry.TriangleMesh()
         self.sphere_list = []
