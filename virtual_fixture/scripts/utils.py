@@ -37,7 +37,7 @@ from materials import mat_sphere_transparent, mat_skin
 from tqdm import tqdm
 from ament_index_python.packages import get_package_share_directory
 
-def compute_torax_projection(mesh, output_path):
+def compute_torax_projection(mesh):
     """
     Computes the projection of the SKEL torax to the SMPL mesh
     """

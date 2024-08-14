@@ -41,21 +41,21 @@ class VirtualFixture(Node):
         self.areas_pub = self.create_publisher(Areas, 'areas', 1)
         self.areas = None
         self.radius = 0.05
-        # self.compute_VF()
         
         mesh = o3d.io.read_triangle_mesh(self.load_path)
+
         self.output_path = os.path.expanduser('~')+"/SKEL_WS/ros2_ws/projected_skel.ply"
+        rib_cage = utils.compute_torax_projection(mesh)
+        rib_cage = rib_cage.to_legacy()
         
-        # rib_cage = utils.compute_torax_projection(mesh, self.output_path)
-        # o3d.visualization.draw([rib_cage])
-        # rib_cage = rib_cage.to_legacy()
         
-        rib_cage = o3d.io.read_triangle_mesh(self.output_path)
-        rib_cage_new = o3d.t.geometry.TriangleMesh.from_legacy(rib_cage)
-        rib_cage_new = rib_cage_new.extrude_linear([0,0,-0.05])
-        o3d.visualization.draw_geometries([rib_cage_new.to_legacy()])
-        rib_cage = rib_cage_new.to_legacy()
-        
+        EXTRUDE = False
+        if EXTRUDE:
+            rib_cage_new = o3d.t.geometry.TriangleMesh.from_legacy(rib_cage)
+            rib_cage_new = rib_cage_new.extrude_linear([0,0,-0.05])
+            o3d.visualization.draw_geometries([rib_cage_new.to_legacy()])
+            rib_cage = rib_cage_new.to_legacy()
+
         self.transform_mesh(rib_cage)
         o3d.io.write_triangle_mesh(self.output_path, rib_cage, write_ascii=True)
         self.get_logger().info("Clear rviz")
