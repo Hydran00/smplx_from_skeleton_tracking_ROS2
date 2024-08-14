@@ -317,4 +317,4 @@ if __name__ == "__main__":
     rclpy.shutdown()
 
     # TODO vedere capire perche il codice vecchio che usava solo un triangolo funzionava
-    # TODO capire se il problema sono le normali
+    # TODO capire se il problema sono le normali 
