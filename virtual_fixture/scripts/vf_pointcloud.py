@@ -95,7 +95,7 @@ class VirtualFixtureDemo(Node):
         # Start the main loop
         self._run_main_loop()
 
-    def _closest_point_on_triangle(triangle_vertices, point):
+    def _closest_point_on_triangle(self, triangle_vertices, point):
         A, B, C = triangle_vertices
         AB = B - A
         AC = C - A
@@ -227,20 +227,20 @@ class VirtualFixtureDemo(Node):
               then  add {Ni, CPi} to L ; end
                 
         '''
-        for triangle in nearby_triangles:
-            A, B, C = [self.vertices[i] for i in triangle]
-            closest_point = self._closest_point_on_triangle([A, B, C], target_position)
-            # self.get_logger().info(f"Analyzing triangle: {triangle}, closest point: {closest_point}")
-            idx = np.where((self.triangles == triangle).all(axis=1))[0]
-            if len(idx) == 0:
-                # Handle the case where no matching triangle is found
-                self.get_logger().error(f"No matching triangle found for {triangle}, {idx}")
-                exit(1)
-            idx = idx[0]
-            triangle_normal = self.triangle_normals[idx]
+        # CPi is the closest point on the triangle to the sphere center
+        CP = [self._closest_point_on_triangle([self.vertices[i] for i in triangle], self.sphere_center) for triangle in nearby_triangles]
+        # Ti is a triangle in the region 
+        T = nearby_triangles
+        for i, Ti in enumerate(T):
+            CPi = CP[i]
+            Ni = self.triangle_normals[Ti]
+            # Check if CPi is in the triangle and the normal points towards the sphere center
+            if self._is_in_triangle(Ti, CPi) and Ni.T @ (self.sphere_center - CPi) >= 0:
+                constraints.append(Ni.T @ delta_x >= -Ni.T @ (self.sphere_center - CPi))
+                
 
             # Adjusted constraint to ensure sphere stays on the surface
-            constraints.append(triangle_normal.T @ (self.sphere_center + delta_x - closest_point) >= buffer_distance+sphere_radius)
+            # constraints.append(triangle_normal.T @ (self.sphere_center + delta_x - closest_point) >= buffer_distance+sphere_radius)
 
 
         # Solve the optimization problem
@@ -249,6 +249,9 @@ class VirtualFixtureDemo(Node):
 
         # Return the adjusted sphere center
         return self.sphere_center + delta_x.value
+    def _is_in_triangle(self, triangle, point):
+        # TODO
+        return True
 
     def _move_sphere(self, current, direction_vector, speed):
         """
