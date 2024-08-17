@@ -2,6 +2,16 @@ import numpy as np
 import matplotlib.pyplot as plt
 import numpy as np
 from math_utils import compute_triangle_xfm
+from enum import Enum
+
+class Location(Enum):
+    IN = 0
+    V1 = 1
+    V2 = 2
+    V3 = 3
+    V1V2 = 4
+    V1V3 = 5
+    V2V3 = 6
 
 def E(xy, XY, dxdy):
     """
@@ -46,51 +56,54 @@ def find_closest_point_on_triangle(point, triXfm, triXfmInv, v1, v2, v3):
             if E(pt_2d, P1, E13) >= 0.0:
                 closest_local = np.array([P1[0], P1[1], 0.0])
                 closestPoint = np.dot(triXfmInv, np.append(closest_local, [1.0]))[:3]
-                return closestPoint, "V1"
+                return closestPoint, Location.V1
         elif y >= P2[1]:
             if E(pt_2d, P2, E23) <= 0.0:
                 closest_local = np.array([P2[0], P2[1], 0.0])
                 closestPoint = np.dot(triXfmInv, np.append(closest_local, [1.0]))[:3]
-                return closestPoint, "V2"
+                return closestPoint, Location.V2
         else:
             closest_local = np.array([0.0, y, 0.0])
             closestPoint = np.dot(triXfmInv, np.append(closest_local, [1.0]))[:3]
-            return closestPoint, "V1V2"
+            return closestPoint, Location.V1V2
     
     if E(pt_2d, P1, P1P3) >= 0.0:
         if E(pt_2d, P1, E13) >= 0.0:
             closest_local = np.array([P1[0], P1[1], 0.0])
             closestPoint = np.dot(triXfmInv, np.append(closest_local, [1.0]))[:3]
-            return closestPoint, "V1"
+            return closestPoint, Location.V1
         elif E(pt_2d, P3, E13) <= 0.0:
             if E(pt_2d, P3, E23) >= 0.0:
                 closest_local = np.array([P3[0], P3[1], 0.0])
                 closestPoint = np.dot(triXfmInv, np.append(closest_local, [1.0]))[:3]
-                return closestPoint, "V3"
+                return closestPoint, Location.V3
         else:
             projection = np.dot(pt_2d, P1P3) * P1P3
             closest_local = np.array([projection[0], projection[1], 0.0])
             closestPoint = np.dot(triXfmInv, np.append(closest_local, [1.0]))[:3]
-            return closestPoint, "V1V3"
+            return closestPoint, Location.V1V3
     
     if E(pt_2d, P2, P2P3) <= 0:
         if E(pt_2d, P2, E23) <= 0:
             closest_local = np.array([P2[0], P2[1], 0.0])
             closestPoint = np.dot(triXfmInv, np.append(closest_local, [1.0]))[:3]
-            return closestPoint, "V2"
+            return closestPoint, Location.V2
         elif E(pt_2d, P3, E23) >= 0:
             closest_local = np.array([P3[0], P3[1], 0.0])
             closestPoint = np.dot(triXfmInv, np.append(closest_local, [1.0]))[:3]
-            return closestPoint, "V3"
+            return closestPoint, Location.V3
         else:
             projection = np.dot(pt_2d - P2, P2P3) / np.dot(P2P3, P2P3) * P2P3 + P2
             closest_local = np.array([projection[0], projection[1], 0.0])
             closestPoint = np.dot(triXfmInv, np.append(closest_local, [1.0]))[:3]
-            return closestPoint, "V2V3"
+            return closestPoint, Location.V2V3
     
     closest_local = np.array([pt_2d[0], pt_2d[1], 0.0])
     closestPoint = np.dot(triXfmInv, np.append(closest_local, [1.0]))[:3]
     return closestPoint, "IN"
+
+
+
 
 def visualize_test_case(P1, P2, P3, point, closestPoint, location):
     plt.figure(figsize=(8, 6))

@@ -207,16 +207,16 @@ def compute_torax_projection(mesh):
 
     return filtered_mesh
 
-def visualize_mesh_normals(surface):
-    surface.compute_vertex_normals()
+def visualize_mesh_normals(mesh):
+    mesh.compute_vertex_normals()
 
     # Create a LineSet for visualizing normals
     lines = []
     colors = []
-    points = np.asarray(surface.vertices)
-    normals = np.asarray(surface.triangle_normals)
+    points = np.asarray(mesh.vertices)
+    normals = np.asarray(mesh.triangle_normals)
     # Generate lines for each triangle normal
-    for i, triangle in enumerate(np.asarray(surface.triangles)):
+    for i, triangle in enumerate(np.asarray(mesh.triangles)):
         v0, v1, v2 = triangle
         triangle_center = (points[v0] + points[v1] + points[v2]) / 3
         normal_start = triangle_center

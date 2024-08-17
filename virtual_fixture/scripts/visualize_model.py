@@ -7,6 +7,7 @@ import numpy as np
 import os
 import time
 from utils import LUNG_US_SMPL_FACES, to_z_up
+import utils
 import copy
 import scipy
 from materials import mat_sphere_transparent, mat_skin
@@ -102,4 +103,43 @@ class Visualizer:
         self.viz.update_renderer()
         
 if __name__=="__main__":
-    vis = Visualizer()
+    # Load the mesh
+    skull = o3d.io.read_triangle_mesh(os.path.expanduser('~') + '/SKEL_WS/ros2_ws/Skull.stl')
+    skull.compute_triangle_normals()  # Ensure triangle normals are computed
+
+    # Create a LineSet for visualizing normals
+    lines = []
+    colors = []
+    vertices = np.asarray(skull.vertices)
+    triangles = np.asarray(skull.triangles)
+    normals = np.asarray(skull.triangle_normals)  # Use triangle normals
+
+    # Create a list to store the new vertices
+    new_vertices = []
+
+    # Generate lines for each triangle normal
+    for i, triangle in enumerate(triangles):
+        v0, v1, v2 = triangle
+        # Compute the center of the triangle (face)
+        triangle_center = (vertices[v0] + vertices[v1] + vertices[v2]) / 3.0
+        normal_start = triangle_center
+        normal_end = triangle_center + normals[i] * 2  # Adjust length of the normal line
+
+        new_vertices.append(normal_start)
+        new_vertices.append(normal_end)
+        
+        lines.append([2*i, 2*i + 1])
+        colors.extend([[1, 0, 0]] * 2)  # Red color for normals
+
+    # Convert new vertices and lines to numpy arrays
+    new_vertices = np.array(new_vertices)
+    lines = np.array(lines)
+
+    # Create LineSet object
+    line_set = o3d.geometry.LineSet()
+    line_set.points = o3d.utility.Vector3dVector(new_vertices)
+    line_set.lines = o3d.utility.Vector2iVector(lines)
+    line_set.colors = o3d.utility.Vector3dVector(colors)
+
+    # Visualize the mesh and the normals
+    o3d.visualization.draw_geometries([skull, line_set])

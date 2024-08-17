@@ -10,6 +10,7 @@ from rclpy.node import Node
 import cvxpy as cp
 from scipy.spatial import KDTree
 import math_utils 
+from closest_on_triangle import find_closest_point_on_triangle, Location
 
 # Set up environment variable for SDL
 os.environ['SDL_AUDIODRIVER'] = 'dsp'
@@ -36,8 +37,11 @@ class VirtualFixtureDemo(Node):
         pygame.display.set_mode((screen_width, screen_height))        
         
         # Load and prepare the surface (bunny mesh)
-        dataset = o3d.data.BunnyMesh()
-        self.surface = o3d.io.read_triangle_mesh(dataset.path)
+        # dataset = o3d.data.BunnyMesh()
+        # self.surface = o3d.io.read_triangle_mesh(dataset.path)
+        self.surface = o3d.io.read_triangle_mesh(os.path.expanduser('~') + '/SKEL_WS/ros2_ws/Skull.stl')
+        # scale down by 1000
+        self.surface.scale(1/1000, center=(0, 0, 0))
 
         self.surface.compute_vertex_normals()  # Compute normals for the mesh
         self.viz.add_geometry(self.surface)
@@ -168,12 +172,12 @@ class VirtualFixtureDemo(Node):
         Enforce the virtual fixture by adjusting the sphere center based on nearby triangles.
         """
         # Define a small buffer distance to prevent penetration
-        buffer_distance = 0.001
+        buffer_distance = 0.01
 
         # Find nearby triangles within a specified distance
         max_distance = sphere_radius + buffer_distance
         nearby_triangles = self._find_nearby_triangles(self.old_sphere_center, max_distance)
-        self.get_logger().info(f"{self.iteration}) Nearby triangles: {nearby_triangles}")
+        # self.get_logger().info(f"{self.iteration}) Nearby triangles: {nearby_triangles}")
         if len(nearby_triangles) == 0:
             # No nearby triangles found; return the target position
             return target_position
@@ -191,48 +195,55 @@ class VirtualFixtureDemo(Node):
 
         Algorithm 1
         for triangle Ti ∈ T do
-          if CPi in-triangle & N T  i (x − CPi) ≥ 0 then
+          if CPi in-triangle & N T  i (x - CPi) ≥ 0 then
             add {Ni, CPi} to L ;
           else if CPi on-edge then
             Find adjacent triangle(s) Ti,a ;
           if CPi == CPi,a & locally convex then
-            add {x − CPi, CPi} to L ;
-          else if N T  i (x − CPi) ≥ 0 & locally concave
+            add {x - CPi, CPi} to L ;
+          else if N T  i (x - CPi) ≥ 0 & locally concave
               then  add {Ni, CPi} to L ; end
                 
         '''
         # Ti is a triangle in the region 
         T = np.array(nearby_triangles)
         # CPi is the closest point on the triangle to the sphere center
-        self.get_logger().info(f"{self.iteration}) Nearby triangles shape: {T.shape}")
-        CP = [math_utils.find_closest_point_on_triangle(self.sphere_center, self.trianglesXfm[Ti], self.trianglesXfmInv[Ti], self.vertices[self.triangles[Ti][0]], self.vertices[self.triangles[Ti][1]], self.vertices[self.triangles[Ti][2]]) for Ti in T]
+        # self.get_logger().info(f"{self.iteration}) Nearby triangles shape: {T.shape}")
+        
         for i, Ti in enumerate(T):
-            CPi, triangle_pos = CP[i]
+            V1 = self.vertices[self.triangles[Ti][0]]
+            V2 = self.vertices[self.triangles[Ti][1]]
+            V3 = self.vertices[self.triangles[Ti][2]]
+            CPi, triangle_pos = find_closest_point_on_triangle(self.sphere_center, self.trianglesXfm[Ti], self.trianglesXfmInv[Ti], V1, V2, V3)
             Ni = self.triangle_normals[Ti]
             # Check if CPi is in the triangle and the normal points towards the sphere center
-            if triangle_pos == "IN" and Ni.T @ (self.sphere_center - CPi) >= 0:
+            if triangle_pos == Location.IN and Ni.T @ (self.sphere_center - CPi) >= 0:
                 # constraints.append(Ni.T @ delta_x >= -Ni.T @ (self.sphere_center - CPi))
+                print("In triangle")
                 contraints_planes.append([Ni, CPi])
             # Check if CPi is on the edge
-            elif triangle_pos != "IN":
-                neighbors = self.mesh.face_neighbors[Ti]
+            elif triangle_pos != Location.IN:
+                neighbors = self.mesh.get_neighbors_of_face(Ti)
                 for neighbor in neighbors:
-                    V1, V2, V3 = [self.vertices[j] for j in self.triangles[Ti]]
-                    CPa, triangle_pos_a = math_utils.find_closest_point_on_triangle(self.sphere_center, self.trianglesXfm[neighbor], self.trianglesXfmInv[neighbor], V1, V2, V3)
-                    if CPi == CPa and self.mesh.is_locally_convex(Ti, neighbor):
+                    V1 = self.vertices[self.triangles[neighbor][0]]
+                    V2 = self.vertices[self.triangles[neighbor][1]]
+                    V3 = self.vertices[self.triangles[neighbor][2]]
+                    CPa, triangle_pos_a = find_closest_point_on_triangle(self.sphere_center, self.trianglesXfm[neighbor], self.trianglesXfmInv[neighbor], V1, V2, V3)
+                    if abs(np.linalg.norm(CPi - CPa))<1e-7 and self.mesh.is_locally_convex(Ti, neighbor, triangle_pos_a):
                         constraints_planes.append([self.sphere_center - CPi, CPi])
-                    elif Ni.T @ (self.sphere_center - CPi) >= 0 and not self.mesh.is_locally_convex(Ti, neighbor):
+                    elif Ni.T @ (self.sphere_center - CPi) >= 0 and self.mesh.is_locally_concave(Ti, neighbor, triangle_pos):
                         contraints_planes.append([Ni, CPi])
 
 
             # Adjusted constraint to ensure sphere stays on the surface
             # constraints.append(triangle_normal.T @ (self.sphere_center + delta_x - closest_point) >= buffer_distance+sphere_radius)
 
-
+        for plane in contraints_planes:
+            constraints.append(plane[0].T @ delta_x >= -plane[0].T @ plane[1])
         # Solve the optimization problem
         problem = cp.Problem(objective, constraints)
         problem.solve()
-        self.get_logger().info(f"{self.iteration}) Optimization status: {problem.status}")
+        # self.get_logger().info(f"{self.iteration}) Optimization status: {problem.status}")
 
         # Return the adjusted sphere center
         return self.sphere_center + delta_x.value
@@ -282,7 +293,7 @@ class VirtualFixtureDemo(Node):
                     if event.key == pygame.K_e:
                         self.direction_vector[1] -= 1.0
 
-            self.get_logger().info(f"Direction vector: {self.direction_vector}")
+            # self.get_logger().info(f"Direction vector: {self.direction_vector}")
             # Update target sphere position
             self.sphere_target_center = self._move_sphere(self.old_sphere_target_center, self.direction_vector, MOVEMENT_SPEED)
             self.sphere_target.translate(self.sphere_target_center, relative=False)

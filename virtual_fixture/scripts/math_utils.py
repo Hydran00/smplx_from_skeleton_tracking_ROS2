@@ -1,5 +1,6 @@
 import numpy as np
-
+import collections
+from enum import Enum
 class Mesh:
     def __init__(self, vertices, faces, normals):
         self.vertices = vertices          # List of vertices (vct3 equivalent)
@@ -41,6 +42,64 @@ class Mesh:
         """Find and store neighbors for all triangles."""
         for face_idx in range(len(self.faces)):
             self.find_face_neighbor(face_idx)
+    
+    def get_neighbors_of_face(self, face_idx):
+        """
+        Get the list of face indices corresponding to the neighbors of a given face.
+
+        :param mesh: The Mesh object
+        :param face_idx: The index of the face for which neighbors are needed
+        :return: A list of neighboring face indices
+        """
+        # Get the dictionary of neighbors for the given face index
+        neighbors_dict = self.face_neighbors.get(face_idx, {})
+
+        # Extract the face indices from the neighbors_dict values
+        neighboring_faces = list(neighbors_dict.values())
+
+        return neighboring_faces
+
+    def is_locally_convex(self, idx, neighbor, cpLocation):
+        """Check if a triangle is locally convex based on the location of the closest point."""
+        return self.check_convexity(idx, neighbor, cpLocation)
+    
+    def is_locally_concave(self, idx, neighbor, cpLocation):
+        """Check if a triangle is locally concave based on the location of the closest point."""
+        return not self.is_locally_convex(idx, neighbor, cpLocation)
+
+    def check_convexity(self, idx, idxNeighbor, location):
+        vec1 = np.zeros(3)
+        vec2 = np.zeros(3)
+        vertexOffset = 0  # Assuming vertexOffset is 1 as in the C++ code
+
+        if location == Location.V1V2:
+            vec1 = self.vertices[faces[idx][2] - vertexOffset] - self.vertices[faces[idx][0] - vertexOffset]
+            vec2 = self.vertices[faces[idx][2] - vertexOffset] - self.vertices[faces[idx][1] - vertexOffset]
+        elif location == Location.V1V3:
+            vec1 = self.vertices[faces[idx][1] - vertexOffset] - self.vertices[faces[idx][0] - vertexOffset]
+            vec2 = self.vertices[faces[idx][1] - vertexOffset] - self.vertices[faces[idx][2] - vertexOffset]
+        elif location == Location.V2V3:
+            vec1 = self.vertices[faces[idx][0] - vertexOffset] - self.vertices[faces[idx][1] - vertexOffset]
+            vec2 = self.vertices[faces[idx][0] - vertexOffset] - self.vertices[faces[idx][2] - vertexOffset]
+        elif location == Location.V1:
+            vec1 = self.vertices[faces[idx][1] - vertexOffset] - self.vertices[faces[idx][0] - vertexOffset]
+            vec2 = self.vertices[faces[idx][2] - vertexOffset] - self.vertices[faces[idx][0] - vertexOffset]
+        elif location == Location.V2:
+            vec1 = self.vertices[faces[idx][0] - vertexOffset] - self.vertices[faces[idx][1] - vertexOffset]
+            vec2 = self.vertices[faces[idx][2] - vertexOffset] - self.vertices[faces[idx][1] - vertexOffset]
+        elif location == Location.V3:
+            vec1 = self.vertices[faces[idx][0] - vertexOffset] - self.vertices[faces[idx][2] - vertexOffset]
+            vec2 = self.vertices[faces[idx][1] - vertexOffset] - self.vertices[faces[idx][2] - vertexOffset]
+
+        dot1 = np.dot(vec1, self.normals[idxNeighbor])
+        dot2 = np.dot(vec2, self.normals[idxNeighbor])
+
+        if dot1 > 0.0 or dot2 > 0.0:
+            return True
+        if dot1 < 0.0 or dot2 < 0.0:
+            return False
+        return False
+
 
 def compute_triangle_xfm(v1, v2, v3):
     # Compute the y-axis as the normalized vector from v1 to v2
@@ -72,41 +131,12 @@ def E(xy, XY, dxdy):
     return round6((xy[0] - XY[0]) * dxdy[1] - (xy[1] - XY[1]) * dxdy[0])
 
 
-
-# Function to check convexity
-def check_convexity(idx, idxNeighbor, cpLocation, vertices, faces, faceNormals):
-    vec1 = np.zeros(3)
-    vec2 = np.zeros(3)
-    location = cpLocation[idx]
-    vertexOffset = 0  # Assuming vertexOffset is 1 as in the C++ code
-
-    if location == "V1V2":
-        vec1 = vertices[faces[idx][2] - vertexOffset] - vertices[faces[idx][0] - vertexOffset]
-        vec2 = vertices[faces[idx][2] - vertexOffset] - vertices[faces[idx][1] - vertexOffset]
-    elif location == "V1V3":
-        vec1 = vertices[faces[idx][1] - vertexOffset] - vertices[faces[idx][0] - vertexOffset]
-        vec2 = vertices[faces[idx][1] - vertexOffset] - vertices[faces[idx][2] - vertexOffset]
-    elif location == "V2V3":
-        vec1 = vertices[faces[idx][0] - vertexOffset] - vertices[faces[idx][1] - vertexOffset]
-        vec2 = vertices[faces[idx][0] - vertexOffset] - vertices[faces[idx][2] - vertexOffset]
-    elif location == "V1":
-        vec1 = vertices[faces[idx][1] - vertexOffset] - vertices[faces[idx][0] - vertexOffset]
-        vec2 = vertices[faces[idx][2] - vertexOffset] - vertices[faces[idx][0] - vertexOffset]
-    elif location == "V2":
-        vec1 = vertices[faces[idx][0] - vertexOffset] - vertices[faces[idx][1] - vertexOffset]
-        vec2 = vertices[faces[idx][2] - vertexOffset] - vertices[faces[idx][1] - vertexOffset]
-    elif location == "V3":
-        vec1 = vertices[faces[idx][0] - vertexOffset] - vertices[faces[idx][2] - vertexOffset]
-        vec2 = vertices[faces[idx][1] - vertexOffset] - vertices[faces[idx][2] - vertexOffset]
-
-    dot1 = np.dot(vec1, faceNormals[idxNeighbor])
-    dot2 = np.dot(vec2, faceNormals[idxNeighbor])
-
-    if dot1 > 0.0 or dot2 > 0.0:
-        return True
-    if dot1 < 0.0 or dot2 < 0.0:
-        return False
-    return False
-
-import collections
+class Location(Enum):
+    IN = 0
+    V1 = 1
+    V2 = 2
+    V3 = 3
+    V1V2 = 4
+    V1V3 = 5
+    V2V3 = 6
 
