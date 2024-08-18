@@ -104,15 +104,16 @@ class Visualizer:
         
 if __name__=="__main__":
     # Load the mesh
-    skull = o3d.io.read_triangle_mesh(os.path.expanduser('~') + '/SKEL_WS/ros2_ws/bunny.ply')
-    skull.compute_triangle_normals()  # Ensure triangle normals are computed
-
+    # mesh = o3d.io.read_triangle_mesh(os.path.expanduser('~') + '/SKEL_WS/ros2_ws/bunny.ply')
+    dataset = o3d.data.BunnyMesh()
+    mesh = o3d.io.read_triangle_mesh(dataset.path)
+    mesh.compute_triangle_normals() 
     # Create a LineSet for visualizing normals
     lines = []
     colors = []
-    vertices = np.asarray(skull.vertices)
-    triangles = np.asarray(skull.triangles)
-    normals = np.asarray(skull.triangle_normals)  # Use triangle normals
+    vertices = np.asarray(mesh.vertices)
+    triangles = np.asarray(mesh.triangles)
+    normals = np.asarray(mesh.triangle_normals)  # Use triangle normals
 
     # Create a list to store the new vertices
     new_vertices = []
@@ -142,4 +143,4 @@ if __name__=="__main__":
     line_set.colors = o3d.utility.Vector3dVector(colors)
 
     # Visualize the mesh and the normals
-    o3d.visualization.draw_geometries([skull, line_set])
+    o3d.visualization.draw_geometries([mesh, line_set])
