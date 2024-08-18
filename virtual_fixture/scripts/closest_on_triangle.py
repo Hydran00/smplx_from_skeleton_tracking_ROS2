@@ -1,9 +1,8 @@
 import numpy as np
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-import numpy as np
 from math_utils import compute_triangle_xfm
 from location import Location
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
 def E(xy, XY, dxdy):
     """
@@ -134,7 +133,7 @@ def visualize_test_case(P1, P2, P3, point, closestPoint, location):
 
 # Example test cases with visualization
 def run_tests():
-    
+
     # Test Case 1: Point exactly at vertex P1
     # point = np.array([0.0, 0.0, 0.0])
     # P1 = np.array([0.0, 0.0, 0.0])
@@ -239,4 +238,4 @@ def run_tests():
     print(closestPoint, location)
     visualize_test_case(P1, P2, P3, point, closestPoint, location)    
 
-run_tests()
+# run_tests()

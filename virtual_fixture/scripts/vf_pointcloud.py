@@ -30,23 +30,25 @@ class VirtualFixtureDemo(Node):
         opt = self.viz.get_render_option()
         opt.show_coordinate_frame = True  # Display coordinate frame
         opt.mesh_show_wireframe = True    # Show mesh wireframe
-        
         # Define screen dimensions and initialize display using pygame
         screen_width, screen_height = 50, 50
         pygame.init()
         pygame.display.set_mode((screen_width, screen_height))        
-        
         # Load and prepare the surface (bunny mesh)
-        # dataset = o3d.data.BunnyMesh()
-        # self.surface = o3d.io.read_triangle_mesh(dataset.path)
-        self.surface = o3d.io.read_triangle_mesh(os.path.expanduser('~') + '/SKEL_WS/ros2_ws/Skull.stl')
+        dataset = o3d.data.BunnyMesh()
+        self.surface = o3d.io.read_triangle_mesh(dataset.path)
+        
+        # self.surface = o3d.io.read_triangle_mesh(os.path.expanduser('~') + '/SKEL_WS/ros2_ws/Skull.stl')
         # scale down by 1000
-        self.surface.scale(1/1000, center=(0, 0, 0))
+        # self.surface.scale(1/1000, center=(0,0,0))
+
 
         self.surface.compute_vertex_normals()  # Compute normals for the mesh
         self.viz.add_geometry(self.surface)
+        
         self.surface.translate((0, 0.5, 0), relative=False)
         self.viz.add_geometry(self.surface)
+        
         
         self.vertices = np.asarray(self.surface.vertices)
         self.triangles = np.asarray(self.surface.triangles)
@@ -55,7 +57,10 @@ class VirtualFixtureDemo(Node):
         self.iteration = 0
 
         self.get_logger().info("Creating mesh")
-        self.mesh = math_utils.Mesh(self.vertices, self.triangles, self.triangle_normals)
+        self.get_logger().info("Computing adj list")
+        self.surface.compute_adjacency_list()
+        self.get_logger().info("initializing edge adj list")
+        self.mesh = math_utils.Mesh(self.vertices, self.triangles, self.triangle_normals, self.surface.adjacency_list)
         self.get_logger().info("Mesh created")
 
 
@@ -113,6 +118,10 @@ class VirtualFixtureDemo(Node):
         # Initialize movement parameters
         self.direction_vector = np.array([0.0, 0.0, 0.0])
 
+        # QP
+        # Initialize optimization variables
+        self.delta_x = cp.Variable(3)
+        
         # Start the main loop
         self._run_main_loop()
 
@@ -126,34 +135,18 @@ class VirtualFixtureDemo(Node):
         # Find nearby vertices using KD-Tree
         indices = self.tree.query_ball_point(position, max_distance)
         
-        # Collect triangles that use these vertices
-        nearby_triangles = []
-        
-        if VISUALIZE_LOCAL_AREA:
-            self.local_area = self.surface.select_by_index(indices)
-            if self.iteration == 0:
-                self.local_area_viz = o3d.geometry.TriangleMesh()
-                self.local_area_viz.vertices = self.local_area.vertices
-                self.local_area_viz.triangles = self.local_area.triangles
-                self.local_area_viz.compute_vertex_normals()
-                # paint red
-                self.local_area_viz.paint_uniform_color([1, 1, 0])
-                self.viz.add_geometry(self.local_area_viz)
-            else:
-                self.local_area_viz.vertices = self.local_area.vertices
-                self.local_area_viz.triangles = self.local_area.triangles
-                self.local_area_viz.compute_vertex_normals()
-                self.local_area_viz.paint_uniform_color([1, 1, 0])
-                self.viz.update_geometry(self.local_area_viz)
 
         # Create a boolean array that checks if any of the vertices in each triangle match the given indices
         matches = np.isin(self.triangles, indices)
 
         # A triangle is part of `local_area` if all its vertices are in the provided indices
         triangle_in_local_area = np.all(matches, axis=1)
-
+        
+        # Collect triangles that use these vertices
         trianges_idx = np.where(triangle_in_local_area)[0]
-        # Now select the triangles that match
+        
+        nearby_triangles = []
+        # Now select the triangles inside the local area
         for triangle in trianges_idx:
             V1 = self.vertices[self.triangles[triangle][0]]
             V2 = self.vertices[self.triangles[triangle][1]]
@@ -162,10 +155,7 @@ class VirtualFixtureDemo(Node):
             distance = np.linalg.norm(position - closest_point)
             if distance <= max_distance:
                 nearby_triangles.append(triangle)
-        self.iteration += 1
         
-        # return nearby_triangles
-        # return np.where(triangle_in_local_area)[0]
         return nearby_triangles
 
     def _enforce_virtual_fixture(self, target_position, sphere_radius):
@@ -173,7 +163,7 @@ class VirtualFixtureDemo(Node):
         Enforce the virtual fixture by adjusting the sphere center based on nearby triangles.
         """
         # Define a small buffer distance to prevent penetration
-        buffer_distance = 0.008
+        buffer_distance = 0.001
 
         # Find nearby triangles within a specified distance
         max_distance = sphere_radius + buffer_distance
@@ -183,12 +173,9 @@ class VirtualFixtureDemo(Node):
             # No nearby triangles found; return the target position
             return target_position
 
-        # Initialize optimization variables
-        delta_x = cp.Variable(3)
-        objective = cp.Minimize(cp.norm(delta_x - (target_position - self.sphere_center)))
         
         # Construct constraints based on distances to nearby triangles
-        contraints_planes = []
+        constraints_planes = []
         constraints = []
 
 
@@ -210,60 +197,56 @@ class VirtualFixtureDemo(Node):
         T = np.array(nearby_triangles)
         # CPi is the closest point on the triangle to the sphere center
         # self.get_logger().info(f"{self.iteration}) Nearby triangles shape: {T.shape}")
-        
+        nearest_vertices = []
+        nearest_faces_ = []
         for i, Ti in enumerate(T):
             V1 = self.vertices[self.triangles[Ti][0]]
             V2 = self.vertices[self.triangles[Ti][1]]
             V3 = self.vertices[self.triangles[Ti][2]]
             CPi, triangle_pos = find_closest_point_on_triangle(self.sphere_center, self.trianglesXfm[Ti], self.trianglesXfmInv[Ti], V1, V2, V3)
-            Ni = self.triangle_normals[Ti]
+            Ni = self.triangle_normals[Ti] / np.linalg.norm(self.triangle_normals[Ti])
             self.sphere_cp.translate(CPi, relative=False)
             self.viz.update_geometry(self.sphere_cp)
             # Check if CPi is in the triangle and the normal points towards the sphere center
-            if  Ni.T @ (self.sphere_center - CPi) >= 0 and triangle_pos == Location.IN:
-                contraints_planes.append([Ni, CPi])
-                self.get_logger().info(f"{self.iteration}) CPi is in the triangle")
+            if  triangle_pos == Location.IN and Ni.T @ (self.sphere_center - CPi) >= 0:
+                constraints_planes.append([Ni, CPi])
             # Check if CPi is on the edge
             elif triangle_pos != Location.IN:
-                neighbors = self.mesh.get_neighbors_of_face(Ti, triangle_pos)
-                nearest_vertices = np.zeros((len(neighbors), 3))
-                nearest_faces = np.zeros((len(neighbors), 3))
+                neighbors = self.mesh.adjacency_dict[(Ti, triangle_pos)]
                 for n, neighbor in enumerate(neighbors):
                     if neighbor is None:
-                        self.get_logger().info(f"{self.iteration}) Neighbor is none")
                         continue
-                    self.get_logger().info(f"{self.iteration}) Neighbor: {neighbor}")
-                    V1 = self.vertices[self.triangles[neighbor][0]]
-                    V2 = self.vertices[self.triangles[neighbor][1]]
-                    V3 = self.vertices[self.triangles[neighbor][2]]
-                    nearest_vertices[n] = [V1, V2, V3]
-                    nearest_faces[n] = self.triangles[neighbor]
+                    neighbor_face = self.triangles[neighbor]
+                    V1 = self.vertices[neighbor_face[0]]
+                    V2 = self.vertices[neighbor_face[1]]
+                    V3 = self.vertices[neighbor_face[2]]
+
                     CPa, triangle_pos_a = find_closest_point_on_triangle(self.sphere_center, self.trianglesXfm[neighbor], self.trianglesXfmInv[neighbor], V1, V2, V3)
                     if abs(np.linalg.norm(CPi - CPa))<1e-7 and self.mesh.is_locally_convex(Ti, neighbor, triangle_pos_a):
-                        constraints_planes.append([self.sphere_center - CPi, CPi])
+                        constraints_planes.append([(self.sphere_center - CPi)/np.linalg.norm(self.sphere_center - CPi), CPi])
                     elif Ni.T @ (self.sphere_center - CPi) >= 0 and self.mesh.is_locally_concave(Ti, neighbor, triangle_pos):
-                        contraints_planes.append([Ni, CPi])
-
-                    self.nearest_faces.vertices = o3d.utility.Vector3dVector(nearest_vertices)
-                    self.nearest_faces.triangles = o3d.utility.Vector3iVector(nearest_faces)
-                    self.nearest_faces.compute_vertex_normals()
-                    self.nearest_faces.paint_uniform_color([0, 1, 0])
-                    self.viz.update_geometry(self.nearest_faces)
-
-
-
+                        constraints_planes.append([Ni, CPi])
             # Adjusted constraint to ensure sphere stays on the surface
             # constraints.append(triangle_normal.T @ (self.sphere_center + delta_x - closest_point) >= buffer_distance+sphere_radius)
 
-        for plane in contraints_planes:
-            constraints.append(plane[0].T @ delta_x >= -plane[0].T @ (self.sphere_center - plane[1]))
+        for plane in constraints_planes:
+            # n^T ∆x ≥ -n^T (x - p)
+            n = plane[0]
+            x = self.sphere_center
+            p = plane[1]
+            constraints.append(n.T @ self.delta_x >= -n.T @ (x - p))
+            # constraints.append(n.T @ self.delta_x >= -n.T @ p)
         # Solve the optimization problem
+        objective = cp.Minimize(cp.norm(self.delta_x - (target_position - self.sphere_center)))
         problem = cp.Problem(objective, constraints)
         problem.solve()
-        # self.get_logger().info(f"{self.iteration}) Optimization status: {problem.status}")
 
-        # Return the adjusted sphere center
-        return self.sphere_center + delta_x.value
+        if problem.status != cp.OPTIMAL:
+            self.get_logger().warn(f"Optimization problem not solved optimally: {problem.status}")
+            return self.sphere_center
+        # Return the adjusted sphere center     
+           
+        return self.sphere_center + self.delta_x.value
 
     def _move_sphere(self, current, direction_vector, speed):
         """
@@ -327,10 +310,10 @@ class VirtualFixtureDemo(Node):
             self.viz.update_renderer()
 
             # Update old positions for the next iteration
-            self.old_sphere_center = np.array(self.sphere_center)
-            self.old_sphere_target_center = np.array(self.sphere_target_center)
-
-
+            self.old_sphere_target_center = self.sphere_target_center
+            self.old_sphere_center = self.sphere_center
+            self.iteration += 1
+            
     def save_view_point(self, filename):
         """
         Save the current viewpoint of the visualizer to a JSON file.
