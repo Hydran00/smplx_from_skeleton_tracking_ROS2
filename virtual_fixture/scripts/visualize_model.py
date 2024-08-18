@@ -104,7 +104,7 @@ class Visualizer:
         
 if __name__=="__main__":
     # Load the mesh
-    skull = o3d.io.read_triangle_mesh(os.path.expanduser('~') + '/SKEL_WS/ros2_ws/Skull.stl')
+    skull = o3d.io.read_triangle_mesh(os.path.expanduser('~') + '/SKEL_WS/ros2_ws/bunny.ply')
     skull.compute_triangle_normals()  # Ensure triangle normals are computed
 
     # Create a LineSet for visualizing normals
@@ -123,7 +123,7 @@ if __name__=="__main__":
         # Compute the center of the triangle (face)
         triangle_center = (vertices[v0] + vertices[v1] + vertices[v2]) / 3.0
         normal_start = triangle_center
-        normal_end = triangle_center + normals[i] * 2  # Adjust length of the normal line
+        normal_end = triangle_center + normals[i] * 0.02  # Adjust length of the normal line
 
         new_vertices.append(normal_start)
         new_vertices.append(normal_end)

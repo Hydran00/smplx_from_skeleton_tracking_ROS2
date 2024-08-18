@@ -32,6 +32,7 @@ class Mesh:
                 adjacency_dict[(face_idx, location)] = adjacent_faces
         with open('adjacency_dict.pkl', 'wb') as f:
             pickle.dump(adjacency_dict, f)
+        print(adjacency_dict)
         self.adjacency_dict = adjacency_dict
 
     def get_adjacent_faces(self, face_index, location):
@@ -52,7 +53,7 @@ class Mesh:
         elif location == Location.V2V3:
             vertices_to_query = [face_vertices[1], face_vertices[2]]
         elif location == Location.IN:
-            return []  # No specific edge to query; return empty for now
+            return []  # No specific edge to query; return empty
         
         # Find adjacent faces based on the adjacency of the vertices
         adjacent_faces = set()
@@ -90,6 +91,14 @@ class Mesh:
 
         Returns:
             bool: True if the edge is convex, False otherwise.
+            
+        The local convexity is found by 
+                        {
+            convexity =     1, if N T i,av > 0 
+                            0, if N T i,av < 0 
+                        }
+            where v is the one of the non-shared edges originating from the shared vertex of the neighboring triangle
+
         """
         # Get the current triangle vertices
         current_triangle = self.faces[idx]
@@ -104,6 +113,12 @@ class Mesh:
         elif location == Location.V2V3:
             vec1 = self.vertices[current_triangle[0]] - self.vertices[current_triangle[1]]
             vec2 = self.vertices[current_triangle[0]] - self.vertices[current_triangle[2]]
+            """
+            In theory, when the CPi falls on a vertex, there could be many triangles intersecting this point.
+            However, it is sufficient to only consider any one of the two adjacent triangles who shares an edge
+            and CPi with Ti. The rest of the triangles whose closet points also fall on this vertex can
+            be safely discarded as they will result in the same constraint.
+            """
         elif location == Location.V1:
             vec1 = self.vertices[current_triangle[1]] - self.vertices[current_triangle[0]]
             vec2 = self.vertices[current_triangle[2]] - self.vertices[current_triangle[0]]
@@ -183,8 +198,9 @@ def compute_triangle_xfm(v1, v2, v3):
     return xfm
 
 def run_test():
-    dataset = o3d.data.BunnyMesh()
-    data = o3d.io.read_triangle_mesh(dataset.path)
+    # dataset = o3d.data.BunnyMesh()
+    # data = o3d.io.read_triangle_mesh(dataset.path)
+    data = o3d.io.read_triangle_mesh(os.path.expanduser('~') + '/SKEL_WS/ros2_ws/bunny.ply')
     data.compute_vertex_normals()
     data.compute_adjacency_list()
     mesh = Mesh(
@@ -200,6 +216,26 @@ def run_test():
     o3d.visualization.draw([colored_mesh])
     
     location = Location.V1V3
+    adjacent_faces = mesh.get_adjacent_faces(face_index, location)
+    colored_mesh = color_mesh_faces(mesh, face_index, adjacent_faces)
+    o3d.visualization.draw([colored_mesh])
+    
+    location = Location.V2V3
+    adjacent_faces = mesh.get_adjacent_faces(face_index, location)
+    colored_mesh = color_mesh_faces(mesh, face_index, adjacent_faces)
+    o3d.visualization.draw([colored_mesh])
+    
+    location = Location.V1
+    adjacent_faces = mesh.get_adjacent_faces(face_index, location)
+    colored_mesh = color_mesh_faces(mesh, face_index, adjacent_faces)
+    o3d.visualization.draw([colored_mesh])
+    
+    location = Location.V2
+    adjacent_faces = mesh.get_adjacent_faces(face_index, location)
+    colored_mesh = color_mesh_faces(mesh, face_index, adjacent_faces)
+    o3d.visualization.draw([colored_mesh])
+    
+    location = Location.V3
     adjacent_faces = mesh.get_adjacent_faces(face_index, location)
     colored_mesh = color_mesh_faces(mesh, face_index, adjacent_faces)
     o3d.visualization.draw([colored_mesh])

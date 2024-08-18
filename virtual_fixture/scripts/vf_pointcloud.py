@@ -35,12 +35,13 @@ class VirtualFixtureDemo(Node):
         pygame.init()
         pygame.display.set_mode((screen_width, screen_height))        
         # Load and prepare the surface (bunny mesh)
-        dataset = o3d.data.BunnyMesh()
-        self.surface = o3d.io.read_triangle_mesh(dataset.path)
+        # dataset = o3d.data.BunnyMesh()
+        # self.surface = o3d.io.read_triangle_mesh(dataset.path)
         
         # self.surface = o3d.io.read_triangle_mesh(os.path.expanduser('~') + '/SKEL_WS/ros2_ws/Skull.stl')
         # scale down by 1000
         # self.surface.scale(1/1000, center=(0,0,0))
+        self.surface = o3d.io.read_triangle_mesh(os.path.expanduser('~') + '/SKEL_WS/ros2_ws/bunny.ply')
 
 
         self.surface.compute_vertex_normals()  # Compute normals for the mesh
@@ -86,6 +87,7 @@ class VirtualFixtureDemo(Node):
 
         # Create and add sphere and target sphere geometries
         self.sphere = o3d.geometry.TriangleMesh.create_sphere(radius=sphere_radius)
+        self.sphere.scale(1.02, center=(0, 0, 0))
         self.sphere.translate(self.sphere_center)
         self.sphere.paint_uniform_color([0, 1, 0])  # Green color for the sphere
         self.viz.add_geometry(self.sphere)
@@ -95,10 +97,11 @@ class VirtualFixtureDemo(Node):
         self.sphere_target.paint_uniform_color([1, 0, 0])  # Red color for the target sphere
         self.viz.add_geometry(self.sphere_target)
 
-        self.sphere_cp = o3d.geometry.TriangleMesh.create_sphere(radius=sphere_radius/3)
-        self.sphere_cp.translate(self.sphere_target_center)
-        self.sphere_cp.paint_uniform_color([0, 0, 1])  # Red color for the cp sphere
-        self.viz.add_geometry(self.sphere_cp)
+        self.planes_list = []
+        
+        
+        
+        
 
         # Add reference frame and ray line to the visualization
         self.reference_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
@@ -163,7 +166,7 @@ class VirtualFixtureDemo(Node):
         Enforce the virtual fixture by adjusting the sphere center based on nearby triangles.
         """
         # Define a small buffer distance to prevent penetration
-        buffer_distance = 0.001
+        buffer_distance = 0.002
 
         # Find nearby triangles within a specified distance
         max_distance = sphere_radius + buffer_distance
@@ -171,6 +174,7 @@ class VirtualFixtureDemo(Node):
         # self.get_logger().info(f"{self.iteration}) Nearby triangles: {nearby_triangles}")
         if len(nearby_triangles) == 0:
             # No nearby triangles found; return the target position
+            self.get_logger().info(f"{self.iteration}) No nearby triangles")
             return target_position
 
         
@@ -205,11 +209,11 @@ class VirtualFixtureDemo(Node):
             V3 = self.vertices[self.triangles[Ti][2]]
             CPi, triangle_pos = find_closest_point_on_triangle(self.sphere_center, self.trianglesXfm[Ti], self.trianglesXfmInv[Ti], V1, V2, V3)
             Ni = self.triangle_normals[Ti] / np.linalg.norm(self.triangle_normals[Ti])
-            self.sphere_cp.translate(CPi, relative=False)
-            self.viz.update_geometry(self.sphere_cp)
+
             # Check if CPi is in the triangle and the normal points towards the sphere center
             if  triangle_pos == Location.IN and Ni.T @ (self.sphere_center - CPi) >= 0:
                 constraints_planes.append([Ni, CPi])
+
             # Check if CPi is on the edge
             elif triangle_pos != Location.IN:
                 neighbors = self.mesh.adjacency_dict[(Ti, triangle_pos)]
@@ -235,6 +239,36 @@ class VirtualFixtureDemo(Node):
             x = self.sphere_center
             p = plane[1]
             constraints.append(n.T @ self.delta_x >= -n.T @ (x - p))
+            
+            # plot the plane
+            size = 0.05
+            plane_mesh = o3d.geometry.TriangleMesh.create_box(width=size, height=size, depth=0.0001)
+            plane_mesh.compute_vertex_normals()
+            # paint the plane
+            plane_mesh.paint_uniform_color([1, 1, 0])
+            plane_mesh.translate(-np.array([size/2, size/2, 0.0001/2]))
+            # Compute the rotation matrix to align the box normal with the plane normal
+            z_axis = np.array([0, 0, 1])
+            n = n / np.linalg.norm(n)  # Ensure the normal is normalized
+
+            # Compute the rotation axis (cross product between z-axis and normal)
+            rotation_axis = np.cross(z_axis, n)
+            rotation_angle = np.arccos(np.dot(z_axis, n))  # Angle between z-axis and normal
+
+            if np.linalg.norm(rotation_axis) > 1e-6:  # Avoid rotation if the plane is already aligned
+                rotation_axis = rotation_axis / np.linalg.norm(rotation_axis)
+                # Convert axis-angle to rotation matrix
+                R = o3d.geometry.get_rotation_matrix_from_axis_angle(rotation_axis * rotation_angle)
+                plane_mesh.rotate(R)
+
+            # Translate the box to the correct position
+            plane_mesh.translate(p)
+
+            self.planes_list.append(plane_mesh)
+            self.viz.add_geometry(plane_mesh, reset_bounding_box=False)
+            
+            
+            
             # constraints.append(n.T @ self.delta_x >= -n.T @ p)
         # Solve the optimization problem
         objective = cp.Minimize(cp.norm(self.delta_x - (target_position - self.sphere_center)))
@@ -245,8 +279,10 @@ class VirtualFixtureDemo(Node):
             self.get_logger().warn(f"Optimization problem not solved optimally: {problem.status}")
             return self.sphere_center
         # Return the adjusted sphere center     
-           
-        return self.sphere_center + self.delta_x.value
+        new_center = self.sphere_center + self.delta_x.value
+        
+        self.get_logger().info(f"{self.iteration}) QP limits {target_position - new_center}")
+        return new_center
 
     def _move_sphere(self, current, direction_vector, speed):
         """
@@ -304,11 +340,13 @@ class VirtualFixtureDemo(Node):
             self.sphere_center = constrained_position
             self.sphere.translate(self.sphere_center, relative=False)
             self.viz.update_geometry(self.sphere)
-
             # Poll for new events and update the renderer
             self.viz.poll_events()
             self.viz.update_renderer()
 
+            for plane in self.planes_list:
+                self.viz.remove_geometry(plane, reset_bounding_box=False)
+            self.planes_list = []
             # Update old positions for the next iteration
             self.old_sphere_target_center = self.sphere_target_center
             self.old_sphere_center = self.sphere_center
