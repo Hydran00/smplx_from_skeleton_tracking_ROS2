@@ -238,4 +238,5 @@ def run_tests():
     print(closestPoint, location)
     visualize_test_case(P1, P2, P3, point, closestPoint, location)    
 
-# run_tests()
+if __name__ == "__main__":
+    run_tests()

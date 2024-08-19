@@ -124,7 +124,7 @@ if __name__=="__main__":
         # Compute the center of the triangle (face)
         triangle_center = (vertices[v0] + vertices[v1] + vertices[v2]) / 3.0
         normal_start = triangle_center
-        normal_end = triangle_center + normals[i] * 0.02  # Adjust length of the normal line
+        normal_end = triangle_center + normals[i] * 0.005  # Adjust length of the normal line
 
         new_vertices.append(normal_start)
         new_vertices.append(normal_end)
