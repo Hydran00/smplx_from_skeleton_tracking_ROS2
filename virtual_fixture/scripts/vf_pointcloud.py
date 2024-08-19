@@ -11,14 +11,15 @@ import cvxpy as cp
 from scipy.spatial import KDTree
 import math_utils 
 from closest_on_triangle import find_closest_point_on_triangle, Location
+from concurrent.futures import ThreadPoolExecutor
 
 # Set up environment variable for SDL
 os.environ['SDL_AUDIODRIVER'] = 'dsp'
 
 # Define constants for visualization and movement
-POINT_RADIUS = 0.01
+POINT_RADIUS = 0.02
 MOVEMENT_SPEED = 0.00005
-VISUALIZE_PLANE_CONSTRAINTS = False
+VISUALIZE_PLANE_CONSTRAINTS = True
 class VirtualFixtureDemo(Node):
     def __init__(self):
         super().__init__('virtual_fixture_demo')
@@ -35,13 +36,13 @@ class VirtualFixtureDemo(Node):
         pygame.init()
         pygame.display.set_mode((screen_width, screen_height))        
         # Load and prepare the surface (bunny mesh)
-        dataset = o3d.data.BunnyMesh()
-        self.surface = o3d.io.read_triangle_mesh(dataset.path)
+        # dataset = o3d.data.BunnyMesh()
+        # self.surface = o3d.io.read_triangle_mesh(dataset.path)
         # self.surface = o3d.io.read_triangle_mesh(os.path.expanduser('~') + '/SKEL_WS/ros2_ws/bunny.ply')
         
-        # self.surface = o3d.io.read_triangle_mesh(os.path.expanduser('~') + '/SKEL_WS/ros2_ws/Skull.stl')
+        self.surface = o3d.io.read_triangle_mesh(os.path.expanduser('~') + '/SKEL_WS/ros2_ws/Skull.stl')
         self.surface.remove_duplicated_vertices()
-        # self.surface.scale(1/1000, center=(0,0,0))
+        self.surface.scale(1/1000, center=(0,0,0))
 
 
         self.surface.compute_vertex_normals()  # Compute normals for the mesh
@@ -79,7 +80,7 @@ class VirtualFixtureDemo(Node):
 
 
         # Initialize sphere properties (for visualization of the virtual fixture)
-        self.sphere_radius = 0.005
+        self.sphere_radius = 0.01
         self.sphere_center =[0.05, 0.501, 0.05]
         self.sphere_target_center =  [0.05, 0.501, 0.05]
         self.old_sphere_center = self.sphere_center
@@ -162,6 +163,97 @@ class VirtualFixtureDemo(Node):
         # return nearby_triangles
         return trianges_idx
 
+
+    def compute_constraints(self, nearby_triangles):
+        
+        # List to store all constraint planes
+        constraint_planes = []
+
+        # Parallel processing with ThreadPoolExecutor
+        with ThreadPoolExecutor() as executor:
+            # Submit tasks for each triangle Ti
+            futures = [executor.submit(self.compute_constraint_for_triangle, Ti) for Ti in nearby_triangles]
+            
+            # Collect results as they complete
+            for future in futures:
+                result = future.result()
+                constraint_planes.extend(result)
+        
+        return constraint_planes
+    
+    
+    def compute_constraint_for_triangle(self,Ti):
+        constraint_planes_local = []
+
+        # Get vertices of the triangle
+        V1 = self.vertices[self.triangles[Ti][0]]
+        V2 = self.vertices[self.triangles[Ti][1]]
+        V3 = self.vertices[self.triangles[Ti][2]]
+
+        # Find the closest point on the triangle to the sphere center
+        CPi, triangle_pos = find_closest_point_on_triangle(self.sphere_center, self.trianglesXfm[Ti], self.trianglesXfmInv[Ti], V1, V2, V3)
+
+        # Normalize the triangle normal
+        Ni = self.triangle_normals[Ti] / np.linalg.norm(self.triangle_normals[Ti])
+
+        # Check if CPi is in the triangle and the normal points towards the sphere center
+        if triangle_pos == Location.IN and Ni.T @ (self.sphere_center - CPi) >= 0:
+            constraint_planes_local.append([Ni, CPi])
+
+        # Handle points on the vertex
+        elif triangle_pos in (Location.V1, Location.V2, Location.V3):
+            if np.linalg.norm(self.sphere_center - CPi) < 0.001:
+                # Average normals for stability
+                active_normal = Ni.copy()
+                neighbors = self.mesh.adjacency_dict[(Ti, triangle_pos+3)]
+                for neighbor in neighbors:  # This should be the correct neighbors for the vertex
+                    if neighbor is None:
+                        continue
+
+                    # Find closest points of the neighboring triangles
+                    V1_neighbor = self.vertices[self.triangles[neighbor][0]]
+                    V2_neighbor = self.vertices[self.triangles[neighbor][1]]
+                    V3_neighbor = self.vertices[self.triangles[neighbor][2]]
+                    CP_neighbor, triangle_pos_neighbor = find_closest_point_on_triangle(
+                        self.sphere_center, 
+                        self.trianglesXfm[neighbor], 
+                        self.trianglesXfmInv[neighbor], 
+                        V1_neighbor, 
+                        V2_neighbor, 
+                        V3_neighbor
+                    )
+
+                    if np.linalg.norm(CPi - CP_neighbor) < 0.001 and self.mesh.is_locally_concave(Ti, neighbor, triangle_pos_neighbor):
+                        # Accumulate normals and average later
+                        active_normal += self.triangle_normals[neighbor] / np.linalg.norm(self.triangle_normals[neighbor])
+
+                # Normalize the averaged normal
+                active_normal /= np.linalg.norm(active_normal)
+                constraint_planes_local.append([active_normal, CPi])
+        else:
+            neighbors = self.mesh.adjacency_dict[(Ti, triangle_pos)]
+            for neighbor in neighbors:
+                if neighbor is None:
+                    continue
+
+                neighbor_face = self.triangles[neighbor]
+                V1_neighbor = self.vertices[neighbor_face[0]]
+                V2_neighbor = self.vertices[neighbor_face[1]]
+                V3_neighbor = self.vertices[neighbor_face[2]]
+
+                CPia, triangle_pos_a = find_closest_point_on_triangle(self.sphere_center, self.trianglesXfm[neighbor], self.trianglesXfmInv[neighbor], V1_neighbor, V2_neighbor, V3_neighbor)
+
+                if np.linalg.norm(CPi - CPia) < 0.001:
+                    if self.mesh.is_locally_convex(Ti, neighbor, triangle_pos_a):
+                        N = (self.sphere_center - CPi) / np.linalg.norm(self.sphere_center - CPi)
+                        constraint_planes_local.append([N, CPi])
+
+                    elif Ni.T @ (self.sphere_center - CPi) >= 0 and self.mesh.is_locally_concave(Ti, neighbor, triangle_pos):
+                        constraint_planes_local.append([Ni, CPi])
+
+        return constraint_planes_local
+
+
     def _enforce_virtual_fixture(self, target_position, sphere_radius):
         """
         Enforce the virtual fixture by adjusting the sphere center based on nearby triangles.
@@ -177,70 +269,16 @@ class VirtualFixtureDemo(Node):
             # No nearby triangles found; return the target position
             return target_position - self.sphere_center
 
-        # Construct constraints based on distances to nearby triangles
-        constraint_planes = []
-
-        T = np.array(nearby_triangles)
-        for i, Ti in enumerate(T):
-            # Get vertices of the triangle
-            V1 = self.vertices[self.triangles[Ti][0]]
-            V2 = self.vertices[self.triangles[Ti][1]]
-            V3 = self.vertices[self.triangles[Ti][2]]
-            
-            # Find the closest point on the triangle to the sphere center
-            CPi, triangle_pos = find_closest_point_on_triangle(self.sphere_center, self.trianglesXfm[Ti], self.trianglesXfmInv[Ti], V1, V2, V3)
-            
-            # Normalize the triangle normal
-            Ni = self.triangle_normals[Ti] / np.linalg.norm(self.triangle_normals[Ti])
-
-            # Check if CPi is in the triangle and the normal points towards the sphere center
-            if triangle_pos == Location.IN and Ni.T @ (self.sphere_center - CPi) >= 0:
-                constraint_planes.append([Ni, CPi])
-            
-            # Handle points on the edge
-            elif triangle_pos != Location.IN:
-                neighbors = self.mesh.adjacency_dict[(Ti, triangle_pos)]
-                for neighbor in neighbors:
-                    if neighbor is None:
-                        continue
-                    
-                    neighbor_face = self.triangles[neighbor]
-                    V1 = self.vertices[neighbor_face[0]]
-                    V2 = self.vertices[neighbor_face[1]]
-                    V3 = self.vertices[neighbor_face[2]]
-
-                    CPia, triangle_pos_a = find_closest_point_on_triangle(self.sphere_center, self.trianglesXfm[neighbor], self.trianglesXfmInv[neighbor], V1, V2, V3)
-
-                    # Check if the closest points on the neighboring triangles are almost equal (handling numerical precision issues)
-                    if np.linalg.norm(CPi - CPia) < 0.001:
-                        # Check if the edge is locally convex
-                        if self.mesh.is_locally_convex(Ti, neighbor, triangle_pos_a):
-                            # Add constraint using the vector between sphere center and closest point
-                            N = (self.sphere_center - CPi) / np.linalg.norm(self.sphere_center - CPi)
-                            constraint_planes.append([N, CPi])
-                        
-                        # Check if the edge is locally concave and normal points towards the sphere center
-                        elif Ni.T @ (self.sphere_center - CPi) >= 0 and self.mesh.is_locally_concave(Ti, neighbor, triangle_pos):
-                            constraint_planes.append([Ni, CPi])
-                    
-                    # Handle the case where the closest point is numerically equal to the target for stability
-                    if np.linalg.norm(self.sphere_center - CPi) < 0.0001:
-                        # Average the normals for stability and add the constraint
-                        average_normal = Ni + self.triangle_normals[neighbor] / np.linalg.norm(self.triangle_normals[neighbor])
-                        average_normal /= np.linalg.norm(average_normal)
-                        constraint_planes.append([average_normal, CPi])
-
-
-                    # else:
-                    #     self.get_logger().info(f"{self.iteration}) No constraints added")
+        # Compute the constraint planes based on the nearby triangles
+        constraint_planes = self.compute_constraints(nearby_triangles)
                     
         constraints = []
         self.delta_x = cp.Variable(3)
         for plane in constraint_planes:
-            # n^T ∆x ≥ -n^T (x - p)
             n = plane[0]
             x = self.sphere_center
             p = plane[1]
+            # n^T ∆x ≥ -n^T (x - p)
             constraints.append(n.T @ self.delta_x >= -n.T @ (x - p) + sphere_radius)
             
             if VISUALIZE_PLANE_CONSTRAINTS:
@@ -285,7 +323,7 @@ class VirtualFixtureDemo(Node):
 
         if problem.status != cp.OPTIMAL:
             self.get_logger().warn(f"Optimization problem not solved optimally: {problem.status}")
-            return target_position - self.sphere_center
+            return np.zeros(3)
         
         # Return the adjusted sphere center     
         new_center = self.delta_x.value
@@ -349,7 +387,6 @@ class VirtualFixtureDemo(Node):
                 damping_factor = 0.9  # Adjust this value to control the damping effect
                 constrained_position = damping_factor * constrained_position
                 self.sphere_center = self._move_sphere(self.old_sphere_center, constrained_position/np.linalg.norm(constrained_position), np.linalg.norm(constrained_position))
-            print(self.sphere_center)
             self.sphere.translate(self.sphere_center, relative=False)
             self.viz.update_geometry(self.sphere)
             # Poll for new events and update the renderer
