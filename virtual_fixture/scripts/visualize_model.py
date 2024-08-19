@@ -12,7 +12,7 @@ import copy
 import scipy
 from materials import mat_sphere_transparent, mat_skin
 import threading
-
+from tqdm import tqdm
 class Visualizer:
 
     def __init__(self):
@@ -104,10 +104,14 @@ class Visualizer:
         
 if __name__=="__main__":
     # Load the mesh
-    # mesh = o3d.io.read_triangle_mesh(os.path.expanduser('~') + '/SKEL_WS/ros2_ws/bunny.ply')
-    dataset = o3d.data.BunnyMesh()
-    mesh = o3d.io.read_triangle_mesh(dataset.path)
-    mesh.compute_triangle_normals() 
+    mesh = o3d.io.read_triangle_mesh(os.path.expanduser('~') + '/SKEL_WS/ros2_ws/Skull.stl')
+    mesh.scale(0.001, center=mesh.get_center())
+    # dataset = o3d.data.BunnyMesh()
+    # mesh = o3d.io.read_triangle_mesh(dataset.path)
+    mesh.compute_triangle_normals()
+    mesh.orient_triangles()
+    mesh.normalize_normals()
+
     # Create a LineSet for visualizing normals
     lines = []
     colors = []
@@ -119,7 +123,7 @@ if __name__=="__main__":
     new_vertices = []
 
     # Generate lines for each triangle normal
-    for i, triangle in enumerate(triangles):
+    for i, triangle in enumerate(tqdm(triangles)):
         v0, v1, v2 = triangle
         # Compute the center of the triangle (face)
         triangle_center = (vertices[v0] + vertices[v1] + vertices[v2]) / 3.0

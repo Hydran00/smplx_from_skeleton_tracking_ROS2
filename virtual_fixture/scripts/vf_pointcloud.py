@@ -44,8 +44,10 @@ class VirtualFixtureDemo(Node):
         self.surface.remove_duplicated_vertices()
         self.surface.scale(1/1000, center=(0,0,0))
 
-
-        self.surface.compute_vertex_normals()  # Compute normals for the mesh
+        self.surface.compute_triangle_normals()
+        self.surface.orient_triangles()
+        self.surface.normalize_normals()
+        
         self.viz.add_geometry(self.surface)
         
         self.surface.translate((0, 0.5, 0), relative=False)
@@ -200,32 +202,31 @@ class VirtualFixtureDemo(Node):
         if triangle_pos == Location.IN and Ni.T @ (self.sphere_center - CPi) >= 0:
             constraint_planes_local.append([Ni, CPi])
 
-        # Handle points on the vertex
+        # Handle CPi on the vertex
         elif triangle_pos in (Location.V1, Location.V2, Location.V3):
             if np.linalg.norm(self.sphere_center - CPi) < 0.001:
                 # Average normals for stability
                 active_normal = Ni.copy()
                 neighbors = self.mesh.adjacency_dict[(Ti, triangle_pos+3)]
-                for neighbor in neighbors:  # This should be the correct neighbors for the vertex
-                    if neighbor is None:
-                        continue
+                if len(neighbors) == 0:
+                    return []
+                neighbor = neighbors[0]
+                # Find closest points of the neighboring triangles
+                V1_neighbor = self.vertices[self.triangles[neighbor][0]]
+                V2_neighbor = self.vertices[self.triangles[neighbor][1]]
+                V3_neighbor = self.vertices[self.triangles[neighbor][2]]
+                CP_neighbor, triangle_pos_neighbor = find_closest_point_on_triangle(
+                    self.sphere_center, 
+                    self.trianglesXfm[neighbor], 
+                    self.trianglesXfmInv[neighbor], 
+                    V1_neighbor, 
+                    V2_neighbor, 
+                    V3_neighbor
+                )
 
-                    # Find closest points of the neighboring triangles
-                    V1_neighbor = self.vertices[self.triangles[neighbor][0]]
-                    V2_neighbor = self.vertices[self.triangles[neighbor][1]]
-                    V3_neighbor = self.vertices[self.triangles[neighbor][2]]
-                    CP_neighbor, triangle_pos_neighbor = find_closest_point_on_triangle(
-                        self.sphere_center, 
-                        self.trianglesXfm[neighbor], 
-                        self.trianglesXfmInv[neighbor], 
-                        V1_neighbor, 
-                        V2_neighbor, 
-                        V3_neighbor
-                    )
-
-                    if np.linalg.norm(CPi - CP_neighbor) < 0.001 and self.mesh.is_locally_concave(Ti, neighbor, triangle_pos_neighbor):
-                        # Accumulate normals and average later
-                        active_normal += self.triangle_normals[neighbor] / np.linalg.norm(self.triangle_normals[neighbor])
+                if np.linalg.norm(CPi - CP_neighbor) < 0.001 and self.mesh.is_locally_concave(Ti, neighbor, triangle_pos_neighbor):
+                    # Accumulate normals and average later
+                    active_normal += self.triangle_normals[neighbor] / np.linalg.norm(self.triangle_normals[neighbor])
 
                 # Normalize the averaged normal
                 active_normal /= np.linalg.norm(active_normal)
@@ -259,7 +260,7 @@ class VirtualFixtureDemo(Node):
         Enforce the virtual fixture by adjusting the sphere center based on nearby triangles.
         """
         # Define a small buffer distance to prevent penetration
-        lookup_area = 0.001
+        lookup_area = 0.002
 
         # Find nearby triangles within a specified distance
         max_distance = sphere_radius + lookup_area
