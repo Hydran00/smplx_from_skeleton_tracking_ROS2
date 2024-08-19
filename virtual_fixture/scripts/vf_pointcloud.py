@@ -18,7 +18,7 @@ os.environ['SDL_AUDIODRIVER'] = 'dsp'
 # Define constants for visualization and movement
 POINT_RADIUS = 0.006
 MOVEMENT_SPEED = 0.00005
-VISUALIZE_LOCAL_AREA = True
+VISUALIZE_PLANE_CONSTRAINTS = False
 class VirtualFixtureDemo(Node):
     def __init__(self):
         super().__init__('virtual_fixture_demo')
@@ -37,11 +37,11 @@ class VirtualFixtureDemo(Node):
         # Load and prepare the surface (bunny mesh)
         # dataset = o3d.data.BunnyMesh()
         # self.surface = o3d.io.read_triangle_mesh(dataset.path)
-        # self.surface = o3d.io.read_triangle_mesh(os.path.expanduser('~') + '/SKEL_WS/ros2_ws/bunny.ply')
+        self.surface = o3d.io.read_triangle_mesh(os.path.expanduser('~') + '/SKEL_WS/ros2_ws/bunny.ply')
         
-        self.surface = o3d.io.read_triangle_mesh(os.path.expanduser('~') + '/SKEL_WS/ros2_ws/Skull.stl')
-        self.surface.remove_duplicated_vertices()
-        self.surface.scale(1/1000, center=(0,0,0))
+        # self.surface = o3d.io.read_triangle_mesh(os.path.expanduser('~') + '/SKEL_WS/ros2_ws/Skull.stl')
+        # self.surface.remove_duplicated_vertices()
+        # self.surface.scale(1/1000, center=(0,0,0))
 
 
         self.surface.compute_vertex_normals()  # Compute normals for the mesh
@@ -142,7 +142,7 @@ class VirtualFixtureDemo(Node):
         # Create a boolean array that checks if any of the vertices in each triangle match the given indices
         matches = np.isin(self.triangles, indices)
 
-        # A triangle is part of `local_area` if all its vertices are in the provided indices
+        # A triangle is part of `local_area` if any its vertices are in the provided indices
         triangle_in_local_area = np.any(matches, axis=1)
         
         # Collect triangles that use these vertices
@@ -227,15 +227,14 @@ class VirtualFixtureDemo(Node):
 
                     CPia, triangle_pos_a = find_closest_point_on_triangle(self.sphere_center, self.trianglesXfm[neighbor], self.trianglesXfmInv[neighbor], V1, V2, V3)
                     
-                    if abs(np.linalg.norm(CPi - CPia))<1e-7 and self.mesh.is_locally_convex(Ti, neighbor, triangle_pos_a):
+                    if abs(np.linalg.norm(CPi - CPia))<1e-9 and self.mesh.is_locally_convex(Ti, neighbor, triangle_pos_a):
                         N = (self.sphere_center - CPi)/np.linalg.norm(self.sphere_center - CPi)
                         constraints_planes.append([N, CPi])
                     
                     elif Ni.T @ (self.sphere_center - CPi) >= 0 and self.mesh.is_locally_concave(Ti, neighbor, triangle_pos):
                         constraints_planes.append([Ni, CPi])
-        if len(constraints_planes)==0:
-            self.get_logger().info(f"{self.iteration}) No constraints added")
-            return target_position
+                    else:
+                        self.get_logger().info(f"{self.iteration}) No constraints added")
         constraints = []    
         for plane in constraints_planes:
             # n^T ∆x ≥ -n^T (x - p)
@@ -244,37 +243,38 @@ class VirtualFixtureDemo(Node):
             p = plane[1]
             constraints.append(n.T @ self.delta_x >= -n.T @ (x - p) + sphere_radius)
             
-            # plot the plane
-            size = 0.03
-            plane_mesh = o3d.geometry.TriangleMesh.create_box(width=size, height=size, depth=0.0001)
-            plane_mesh.compute_vertex_normals()
-            # paint the plane
-            plane_mesh.paint_uniform_color([1, 1, 0])
-            plane_mesh.translate(-np.array([size/2, size/2, 0.0001/2]))
-            # Compute the rotation matrix to align the box normal with the plane normal
-            z_axis = np.array([0, 0, 1])
-            n = n / np.linalg.norm(n)  # Ensure the normal is normalized
+            if VISUALIZE_PLANE_CONSTRAINTS:
+                # plot the plane
+                size = 0.03
+                plane_mesh = o3d.geometry.TriangleMesh.create_box(width=size, height=size, depth=0.0001)
+                plane_mesh.compute_vertex_normals()
+                # paint the plane
+                plane_mesh.paint_uniform_color([1, 1, 0])
+                plane_mesh.translate(-np.array([size/2, size/2, 0.0001/2]))
+                # Compute the rotation matrix to align the box normal with the plane normal
+                z_axis = np.array([0, 0, 1])
+                n = n / np.linalg.norm(n)  # Ensure the normal is normalized
 
-            # Compute the rotation axis (cross product between z-axis and normal)
-            rotation_axis = np.cross(z_axis, n)
-            rotation_angle = np.arccos(np.dot(z_axis, n))  # Angle between z-axis and normal
+                # Compute the rotation axis (cross product between z-axis and normal)
+                rotation_axis = np.cross(z_axis, n)
+                rotation_angle = np.arccos(np.dot(z_axis, n))  # Angle between z-axis and normal
 
-            if np.linalg.norm(rotation_axis) > 1e-6:  # Avoid rotation if the plane is already aligned
-                rotation_axis = rotation_axis / np.linalg.norm(rotation_axis)
-                # Convert axis-angle to rotation matrix
-                R = o3d.geometry.get_rotation_matrix_from_axis_angle(rotation_axis * rotation_angle)
-                plane_mesh.rotate(R)
+                if np.linalg.norm(rotation_axis) > 1e-6:  # Avoid rotation if the plane is already aligned
+                    rotation_axis = rotation_axis / np.linalg.norm(rotation_axis)
+                    # Convert axis-angle to rotation matrix
+                    R = o3d.geometry.get_rotation_matrix_from_axis_angle(rotation_axis * rotation_angle)
+                    plane_mesh.rotate(R)
 
-            # Translate the box to the correct position
-            plane_mesh.translate(p)
+                # Translate the box to the correct position
+                plane_mesh.translate(p)
 
-            self.planes_list.append(plane_mesh)
-            self.viz.add_geometry(plane_mesh, reset_bounding_box=False)
+                self.planes_list.append(plane_mesh)
+                self.viz.add_geometry(plane_mesh, reset_bounding_box=False)
             
             
             
             # constraints.append(n.T @ self.delta_x >= -n.T @ p)
-        # Solve the optimization problem
+        # Solve the optimization problem that accounts also for the radius
         objective = cp.Minimize(cp.norm(self.delta_x - (target_position - self.sphere_center)))
         problem = cp.Problem(objective, constraints)
         problem.solve()
@@ -341,16 +341,16 @@ class VirtualFixtureDemo(Node):
             
             # Enforce virtual fixture on the target position
             constrained_position = self._enforce_virtual_fixture(self.sphere_target_center, POINT_RADIUS)
-            self.sphere_center = 0.5 * (constrained_position + self.sphere_target_center)
+            self.sphere_center = constrained_position
             self.sphere.translate(self.sphere_center, relative=False)
             self.viz.update_geometry(self.sphere)
             # Poll for new events and update the renderer
             self.viz.poll_events()
             self.viz.update_renderer()
-
-            for plane in self.planes_list:
-                self.viz.remove_geometry(plane, reset_bounding_box=False)
-            self.planes_list = []
+            if VISUALIZE_PLANE_CONSTRAINTS:
+                for plane in self.planes_list:
+                    self.viz.remove_geometry(plane, reset_bounding_box=False)
+                self.planes_list = []
             # Update old positions for the next iteration
             self.old_sphere_target_center = self.sphere_target_center
             self.old_sphere_center = self.sphere_center
