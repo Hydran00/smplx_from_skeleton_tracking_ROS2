@@ -7,6 +7,8 @@ import pygame
 import time
 import rclpy
 from rclpy.node import Node
+from geometry_msgs.msg import PoseStamped
+from visualization_msgs.msg import Marker
 import cvxpy as cp
 from scipy.spatial import KDTree
 import math_utils 
@@ -17,9 +19,11 @@ from concurrent.futures import ThreadPoolExecutor
 os.environ['SDL_AUDIODRIVER'] = 'dsp'
 
 # Define constants for visualization and movement
-POINT_RADIUS = 0.02
-MOVEMENT_SPEED = 0.00005
+SPHERE_RADIUS = 0.01
+BUFFER_AREA = SPHERE_RADIUS*2
+MOVEMENT_SPEED = 0.0003
 VISUALIZE_PLANE_CONSTRAINTS = True
+USE_ROS_AS_INPUT = True
 class VirtualFixtureDemo(Node):
     def __init__(self):
         super().__init__('virtual_fixture_demo')
@@ -39,10 +43,11 @@ class VirtualFixtureDemo(Node):
         # dataset = o3d.data.BunnyMesh()
         # self.surface = o3d.io.read_triangle_mesh(dataset.path)
         # self.surface = o3d.io.read_triangle_mesh(os.path.expanduser('~') + '/SKEL_WS/ros2_ws/bunny.ply')
+        self.surface = o3d.io.read_triangle_mesh(os.path.expanduser('~') + '/SKEL_WS/ros2_ws/projected_skel.ply')
         
-        self.surface = o3d.io.read_triangle_mesh(os.path.expanduser('~') + '/SKEL_WS/ros2_ws/Skull.stl')
-        self.surface.remove_duplicated_vertices()
-        self.surface.scale(1/1000, center=(0,0,0))
+        # self.surface = o3d.io.read_triangle_mesh(os.path.expanduser('~') + '/SKEL_WS/ros2_ws/Skull.stl')
+        # self.surface.remove_duplicated_vertices()
+        # self.surface.scale(1/1000, center=(0,0,0))
 
         self.surface.compute_triangle_normals()
         self.surface.orient_triangles()
@@ -82,9 +87,11 @@ class VirtualFixtureDemo(Node):
 
 
         # Initialize sphere properties (for visualization of the virtual fixture)
-        self.sphere_radius = 0.01
-        self.sphere_center =[0.05, 0.501, 0.05]
-        self.sphere_target_center =  [0.05, 0.501, 0.05]
+        self.sphere_radius = SPHERE_RADIUS
+        # self.sphere_center =[0.05, 0.501, 0.07]
+        self.sphere_center =[0.05, 0.501, 0.2]
+        # self.sphere_target_center =  [0.05, 0.501, 0.07]
+        self.sphere_target_center =[0.05, 0.501, 0.2]
         self.old_sphere_center = self.sphere_center
         self.old_sphere_target_center = self.sphere_target_center
 
@@ -108,12 +115,7 @@ class VirtualFixtureDemo(Node):
 
         # Add reference frame and ray line to the visualization
         self.reference_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
-        self.viz.add_geometry(self.reference_frame)
-        self.ray_line = o3d.geometry.LineSet()
-        self.ray_line.points = o3d.utility.Vector3dVector([[0, 0, 0], [0, 0, 0]])
-        self.ray_line.lines = o3d.utility.Vector2iVector([[0, 1]])
-        self.ray_line.colors = o3d.utility.Vector3dVector(np.array([[1, 0, 0]]))  # Red color for the line
-        self.viz.add_geometry(self.ray_line)
+        # self.viz.add_geometry(self.reference_frame)
 
         # Initialize camera parameters and optionally load saved viewpoint
         self.view_point_filename = "view_point.json"
@@ -128,8 +130,23 @@ class VirtualFixtureDemo(Node):
         # Initialize optimization variables
         self.delta_x = cp.Variable(3)
         
+        # ROS2
+        self.ros_input = np.zeros(3) 
+        if USE_ROS_AS_INPUT:
+            self.pose_subscriber = self.create_subscription(PoseStamped, 'target_frame', self.pose_callback, 1)
+            self.marker_publisher = self.create_publisher(Marker, 'visualization_marker', 1)
+            self.pose_publisher = self.create_publisher(PoseStamped, 'target_frame_vf', 1)
+            
+        
+        
+        
         # Start the main loop
         self._run_main_loop()
+
+    def pose_callback(self, msg):
+        self.get_logger().info(f"Received pose: {msg.pose.position.x}, {msg.pose.position.y}, {msg.pose.position.z}")
+        self.ros_input = np.array([msg.pose.position.x, msg.pose.position.y, msg.pose.position.z])
+
 
     def _find_nearby_triangles(self, position, max_distance):
         """
@@ -157,14 +174,14 @@ class VirtualFixtureDemo(Node):
     def get_closest_on_triangle(self, point, face):
         V1, V2, V3 = self.vertices[self.triangles[face]]
         point, location = find_closest_point_on_triangle(self.sphere_center, self.trianglesXfm[face], self.trianglesXfmInv[face], V1, V2, V3)
-        return point, location
+        return [point, location]
 
     def _enforce_virtual_fixture(self, target_position, sphere_radius):
         """
         Enforce the virtual fixture by adjusting the sphere center based on nearby triangles.
         """
         # Define a small buffer distance to prevent penetration
-        lookup_area = 0.002
+        lookup_area = BUFFER_AREA
 
         # Find nearby triangles within a specified distance
         max_distance = sphere_radius + lookup_area
@@ -179,99 +196,158 @@ class VirtualFixtureDemo(Node):
 
         eps = 0.001
         T = np.array(nearby_triangles)
-        for i, Ti in enumerate(T):
-            
+        
+        # precompute CPi for all triangles
+        CP = {Ti: self.get_closest_on_triangle(self.sphere_center, Ti) for Ti in T}
+        
+        # TODO check i integrtiy
+        l = 0 # list index
+        
+        for i,Ti in enumerate(T):
             # Find the closest point on the triangle to the sphere center
-            CPi, triangle_pos = self.get_closest_on_triangle(self.sphere_center, Ti)
-            
+            # CPi, triangle_pos = self.get_closest_on_triangle(self.sphere_center, Ti)
+            CPi, cpi_loc = CP[Ti]
             # Normalize the triangle normal
-            Ni = self.triangle_normals[Ti] / np.linalg.norm(self.triangle_normals[Ti])
+            Ni = self.triangle_normals[Ti]
+            Ni = Ni / np.linalg.norm(Ni)
 
             # Check if CPi is in the triangle and the normal points towards the sphere center
-            if triangle_pos == Location.IN and Ni.T @ (self.sphere_center - CPi) >= 0:
-                constraint_planes.append([Ni, CPi])
+            if cpi_loc == Location.IN:
+                if Ni.T @ (self.sphere_center - CPi) >= 0:
+                    constraint_planes.append([Ni, CPi])
+                    continue
             
             # Handle points on the edges or vertices
-            elif triangle_pos != Location.IN:
+            else:
                 # on vertex
-                if triangle_pos in [Location.V1, Location.V2, Location.V3]:
+                if cpi_loc in [Location.V1, Location.V2, Location.V3]:
                     n = np.copy(Ni)
                     if np.linalg.norm(self.sphere_center - CPi) < eps:
                         # find all same vertex, average and remove
-                        for j, face in enumerate(T[i+1:]):
-                            CPia, _ = self.get_closest_on_triangle(self.sphere_center, face)
+                        for face in T[i+1:]:
+                            CPia, _ = CP[face]
                             if(np.linalg.norm(CPia - CPi) < eps):
                                 n += self.triangle_normals[face] / np.linalg.norm(self.triangle_normals[face])
-                                # remove face if present
-                                T = np.delete(T, j)
+                                # retrieve the index of the face to remove
+                                idx = np.where(T == face)
+                                T = np.delete(T, idx)
+                                
+                                    
                         # normalize normal
                         n /= np.linalg.norm(n)
                         constraint_planes.append([n, CPi])
+                        l += 1
                         continue
                     # proceed as normal
                     else:
-                        neighborIdx1 = 0
-                        neighborIdx2 = 0
-                        if triangle_pos == Location.V1:
-                            neighborIdx1 = self.mesh.adjacency_dict[(Ti, Location.V1V2)][0]
-                            neighborIdx2 = self.mesh.adjacency_dict[(Ti, Location.V1V3)][0]
-                        elif triangle_pos == Location.V2:
-                            neighborIdx1 = self.mesh.adjacency_dict[(Ti, Location.V1V2)][0]
-                            neighborIdx2 = self.mesh.adjacency_dict[(Ti, Location.V2V3)][0]
-                        elif triangle_pos == Location.V3:
-                            neighborIdx1 = self.mesh.adjacency_dict[(Ti, Location.V1V3)][0]
-                            neighborIdx2 = self.mesh.adjacency_dict[(Ti, Location.V2V3)][0]
+                        if cpi_loc == Location.V1:
+                            neighborIdx1 = self.mesh.adjacency_dict[(Ti, Location.V1V2)]
+                            neighborIdx2 = self.mesh.adjacency_dict[(Ti, Location.V1V3)]
+                        elif cpi_loc == Location.V2:
+                            neighborIdx1 = self.mesh.adjacency_dict[(Ti, Location.V1V2)]
+                            neighborIdx2 = self.mesh.adjacency_dict[(Ti, Location.V2V3)]
+                        elif cpi_loc == Location.V3:
+                            neighborIdx1 = self.mesh.adjacency_dict[(Ti, Location.V1V3)]
+                            neighborIdx2 = self.mesh.adjacency_dict[(Ti, Location.V2V3)]
                         else:
-                            self.get_logger().info("Error in edge case")
+                            self.get_logger().info("Error: location not on vertex")
                             exit()
+ 
                     keep = False
-                    CPia, _ = self.get_closest_on_triangle(self.sphere_center, neighborIdx1)
-                    if (np.linalg.norm(self.sphere_center - CPi) < eps):
-                        # remove neighbor1
-                        for j, face in enumerate(T[i+1:]):
-                            if face == neighborIdx1:
-                                T = np.delete(T, j)
-                                keep = True
-                                break
-                    CPia, _ = self.get_closest_on_triangle(self.sphere_center, neighborIdx2)
-                    if (np.linalg.norm(self.sphere_center - CPi) < eps):
-                        # remove neighbor2
-                        for j, face in enumerate(T[i+1:]):
-                            if face == neighborIdx2:
-                                T = np.delete(T, j)
-                                keep = True
-                                break
+                    if len(neighborIdx1) > 0:
+                        neighborIdx1 = neighborIdx1[0]
+                        is_in_cp_list = True
+                        CPia,_ = CP.get(neighborIdx1, [None,None])
+                        if CPia is None:
+                            is_in_cp_list = False
+                            CPia,_ = self.get_closest_on_triangle(self.sphere_center, neighborIdx1)
+                        if (np.linalg.norm(CPia - CPi) < eps):
+                            # remove neighbor1
+                            for face in T[i+1:]:
+                                if face == neighborIdx1:
+                                    idx = np.where(T == face)
+                                    T = np.delete(T, idx)
+                                    if is_in_cp_list:
+                                        CP[face] = [CP[face][0],Location.VOID]
+                                    keep = True
+                                    break
+                    if len(neighborIdx2) > 0:
+                        neighborIdx2 = neighborIdx2[0]
+                        is_in_cp_list = True
+                        CPia,_ = CP.get(neighborIdx2, [None,None])
+                        if CPia is None:
+                            is_in_cp_list = False
+                            CPia,_ = self.get_closest_on_triangle(self.sphere_center, neighborIdx2)
+                        if (np.linalg.norm(CPia - CPi) < eps):
+                            # remove neighbor2
+                            for face in T[i+1:]:
+                                if face == neighborIdx2:
+                                    idx = np.where(T == face)
+                                    T = np.delete(T, idx)
+                                    if is_in_cp_list:
+                                        CP[face] = [CP[face][0],Location.VOID]
+                                    keep = True
+                                    break
                     if keep:
-                        constraint_planes.append([self.sphere_center - CPi, CPi])
+                        n = self.sphere_center - CPi
+                        n /= np.linalg.norm(n)
+                        constraint_planes.append([n, CPi])
+                        l += 1
                         continue
                 
                 # on edge
                 else:
-                    # Get the neighboring triangles
-                    neighborIdx = self.mesh.adjacency_dict[(Ti, triangle_pos)][0]
-                    # if neightbor on the same edge, then closest point must have been identical. We proceed only when locally concave.
-                    if(self.mesh.is_locally_concave(Ti, neighborIdx, triangle_pos)):
-                        # Add constraint using the vector between sphere center and closest point
-                        CPia, _ = self.get_closest_on_triangle(self.sphere_center, neighborIdx)
-                        if np.linalg.norm(CPi - CPia) < eps:
-                            if np.linalg.norm(self.sphere_center - CPi) < eps:
-                                n = np.copy(Ni)
-                                n += self.triangle_normals[neighborIdx] / np.linalg.norm(self.triangle_normals[neighborIdx])
-                                n /= np.linalg.norm(n)
-                                constraint_planes.append([n, CPi])
+                    if cpi_loc != Location.VOID:
+                        # Get the neighboring triangle face index
+                        neighborIdx = self.mesh.adjacency_dict[(Ti, cpi_loc)]
+                        if len(neighborIdx) > 0:
+                            neighborIdx = neighborIdx[0]
+                            is_in_cp_list = True                            
+                            CPia,cpia_loc = CP.get(neighborIdx, [None,None])
+                            is_in_cp_list = True
+                            if CPia is None:
+                                is_in_cp_list = False
+                                CPia,cpia_loc = self.get_closest_on_triangle(self.sphere_center, neighborIdx)
+                            # if neightbor on the same edge, then closest point must have been identical. We proceed only when locally concave.
+                            if(self.mesh.is_locally_concave(Ti, neighborIdx, cpi_loc)):
+                                # Add constraint using the vector between sphere center and closest point
+                                if np.linalg.norm(CPi - CPia) < eps:
+                                    if np.linalg.norm(self.sphere_center - CPi) < eps:
+                                        n = np.copy(Ni)
+                                        n += self.triangle_normals[neighborIdx] / np.linalg.norm(self.triangle_normals[neighborIdx])
+                                        n /= np.linalg.norm(n)
+                                        constraint_planes.append([n, CPi])
+                                        l += 1
+                                        continue
+                                    else:
+                                        if is_in_cp_list:
+                                            CP[neighborIdx] = [CP[neighborIdx][0],Location.VOID]
+                                        
+                                        for face in T[i+1:]:
+                                            if face == neighborIdx:
+                                                idx = np.where(T == face)
+                                                T = np.delete(T, idx)
+                                                break
+                                        n = self.sphere_center - CPi
+                                        n /= np.linalg.norm(n)
+                                        constraint_planes.append([n, CPi])
+                                        l += 1
+                                        continue
+                        
+                            # if convex and on the positive side of normal
+                            elif cpia_loc != Location.VOID and Ni.T @ (self.sphere_center - CPi) >= 0:
+                                constraint_planes.append([Ni, CPi])
+                                l += 1
                                 continue
-                            else:
-                                for j, face in enumerate(T[i+1:]):
-                                    if face == neighborIdx:
-                                        T = np.delete(T, j)
-                                        break
-                                constraint_planes.append([self.sphere_center - CPi, CPi])
-                                continue
-                
-                    # if convex and on the positive side of normal
-                    # TODO to verify
-                    elif Ni.T @ (self.sphere_center - CPi) >= 0:
-                        constraint_planes.append([Ni, CPi])
+                        else:
+                            continue
+            
+            # otherwise, delete current mesh
+            CP[Ti] = [CP[Ti][0],Location.VOID]
+            # print('Trying to remove', i, 'from', T)
+            idx = np.where(T == Ti)
+            T = np.delete(T, idx)
+            
                         
         constraints = []
         self.delta_x = cp.Variable(3)
@@ -337,55 +413,59 @@ class VirtualFixtureDemo(Node):
         """
         return current + direction_vector * speed
 
+    def pygame_input(self):
+        clock = pygame.time.Clock()
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_w:
+                    self.direction_vector[2] -= 1.0
+                if event.key == pygame.K_s:
+                    self.direction_vector[2] += 1.0
+                if event.key == pygame.K_a:
+                    self.direction_vector[0] += 1.0
+                if event.key == pygame.K_d:
+                    self.direction_vector[0] -= 1.0
+                if event.key == pygame.K_q:
+                    self.direction_vector[1] -= 1.0
+                if event.key == pygame.K_e:
+                    self.direction_vector[1] += 1.0
+                if event.key == pygame.K_v:
+                    self.save_view_point(self.view_point_filename)
+            elif event.type == pygame.KEYUP:
+                if event.key == pygame.K_w:
+                    self.direction_vector[2] += 1.0
+                if event.key == pygame.K_s:
+                    self.direction_vector[2] -= 1.0
+                if event.key == pygame.K_a:
+                    self.direction_vector[0] -= 1.0
+                if event.key == pygame.K_d:
+                    self.direction_vector[0] += 1.0
+                if event.key == pygame.K_q:
+                    self.direction_vector[1] += 1.0
+                if event.key == pygame.K_e:
+                    self.direction_vector[1] -= 1.0
+        # self.get_logger().info(f"Direction vector: {self.direction_vector}")
+        # Update target sphere position
+        return self._move_sphere(self.old_sphere_target_center, self.direction_vector, MOVEMENT_SPEED)
+            
     def _run_main_loop(self):
         """
         Run the main loop to update visualization and enforce virtual fixture constraints.
         """
-        clock = pygame.time.Clock()
-        while True:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    return
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_w:
-                        self.direction_vector[2] -= 1.0
-                    if event.key == pygame.K_s:
-                        self.direction_vector[2] += 1.0
-                    if event.key == pygame.K_a:
-                        self.direction_vector[0] += 1.0
-                    if event.key == pygame.K_d:
-                        self.direction_vector[0] -= 1.0
-                    if event.key == pygame.K_q:
-                        self.direction_vector[1] -= 1.0
-                    if event.key == pygame.K_e:
-                        self.direction_vector[1] += 1.0
-                    if event.key == pygame.K_v:
-                        self.save_view_point(self.view_point_filename)
-
-                elif event.type == pygame.KEYUP:
-                    if event.key == pygame.K_w:
-                        self.direction_vector[2] += 1.0
-                    if event.key == pygame.K_s:
-                        self.direction_vector[2] -= 1.0
-                    if event.key == pygame.K_a:
-                        self.direction_vector[0] -= 1.0
-                    if event.key == pygame.K_d:
-                        self.direction_vector[0] += 1.0
-                    if event.key == pygame.K_q:
-                        self.direction_vector[1] += 1.0
-                    if event.key == pygame.K_e:
-                        self.direction_vector[1] -= 1.0
-
-            # self.get_logger().info(f"Direction vector: {self.direction_vector}")
-            # Update target sphere position
-            self.sphere_target_center = self._move_sphere(self.old_sphere_target_center, self.direction_vector, MOVEMENT_SPEED)
+        while rclpy.ok():
+            if USE_ROS_AS_INPUT == False:
+                self.sphere_target_center = self.pygame_input()
+            else:
+                self.sphere_target_center = self.ros_input
             self.sphere_target.translate(self.sphere_target_center, relative=False)
             self.viz.update_geometry(self.sphere_target)
             
             # Enforce virtual fixture on the target position
             constrained_position = self._enforce_virtual_fixture(self.sphere_target_center, self.sphere_radius)
             if np.linalg.norm(constrained_position) > 1e-6:
-                damping_factor = 0.9  # Adjust this value to control the damping effect
+                damping_factor = 0.9
                 constrained_position = damping_factor * constrained_position
                 self.sphere_center = self._move_sphere(self.old_sphere_center, constrained_position/np.linalg.norm(constrained_position), np.linalg.norm(constrained_position))
             self.sphere.translate(self.sphere_center, relative=False)
@@ -401,6 +481,7 @@ class VirtualFixtureDemo(Node):
             self.old_sphere_target_center = self.sphere_target_center
             self.old_sphere_center = self.sphere_center
             self.iteration += 1
+            rclpy.spin_once(self, timeout_sec=0.01)
             
     def save_view_point(self, filename):
         """

@@ -27,7 +27,7 @@ class Mesh:
                 return
         # For each face, find adjacent faces for all locations
         for face_idx, face in enumerate(tqdm(self.faces)):
-            for location in Location:
+            for location in (Location.V1, Location.V2, Location.V3, Location.V1V2, Location.V1V3, Location.V2V3):
                 adjacent_faces = self.get_adjacent_faces(face_idx, location)
                 adjacency_dict[(face_idx, location)] = adjacent_faces
         with open('adjacency_dict.pkl', 'wb') as f:
@@ -52,9 +52,6 @@ class Mesh:
             vertices_to_query = [face_vertices[0], face_vertices[2]]
         elif location == Location.V2V3:
             vertices_to_query = [face_vertices[1], face_vertices[2]]
-        elif location == Location.IN:
-            return []  # No specific edge to query; return empty
-        
         # Find adjacent faces based on the adjacency of the vertices
         adjacent_faces = set()
         

@@ -1,6 +1,7 @@
 
 from enum import Enum
 class Location(Enum):
+    VOID = -1
     IN = 0
     V1 = 1
     V2 = 2

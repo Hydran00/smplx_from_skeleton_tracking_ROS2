@@ -38,7 +38,7 @@ class VirtualFixture(Node):
         self.areas_save_path_prefix = os.path.expanduser('~')+"/ros2_ws/areas"
         self.visualizer = Visualizer()
         self.vis_update_timer = self.create_timer(0.03, self.update_viz)
-        self.areas_pub = self.create_publisher(Areas, 'areas', 1)
+        # self.areas_pub = self.create_publisher(Areas, 'areas', 1)
         self.areas = None
         self.radius = 0.05
         

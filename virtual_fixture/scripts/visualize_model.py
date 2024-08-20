@@ -104,8 +104,8 @@ class Visualizer:
         
 if __name__=="__main__":
     # Load the mesh
-    mesh = o3d.io.read_triangle_mesh(os.path.expanduser('~') + '/SKEL_WS/ros2_ws/Skull.stl')
-    mesh.scale(0.001, center=mesh.get_center())
+    mesh = o3d.io.read_triangle_mesh(os.path.expanduser('~') + '/SKEL_WS/ros2_ws/projected_skel.ply')
+    # mesh.scale(0.001, center=mesh.get_center())
     # dataset = o3d.data.BunnyMesh()
     # mesh = o3d.io.read_triangle_mesh(dataset.path)
     mesh.compute_triangle_normals()
