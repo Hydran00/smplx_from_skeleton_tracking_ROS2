@@ -1,5 +1,4 @@
 import numpy as np
-from math_utils import compute_triangle_xfm
 from location import Location
 
 
@@ -134,6 +133,7 @@ def visualize_test_case(P1, P2, P3, point, closestPoint, location):
 
 # Example test cases with visualization
 def run_tests():
+    
 
     # Test Case 1: Point exactly at vertex P1
     # point = np.array([0.0, 0.0, 0.0])
@@ -240,4 +240,5 @@ def run_tests():
     visualize_test_case(P1, P2, P3, point, closestPoint, location)    
 
 if __name__ == "__main__":
+    from math_utils import compute_triangle_xfm
     run_tests()

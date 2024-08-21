@@ -7,21 +7,59 @@ from tqdm import tqdm
 import open3d as o3d
 
 class Mesh:
-    def __init__(self, vertices, faces, normals, vertex_adj_list):
+    def __init__(self, vertices, faces, normals):
         self.vertices = vertices  # List of vertices (vct3 equivalent)
         self.faces = faces        # List of faces (vctInt3 equivalent)
         self.normals = normals    # List of normals (vct3 equivalent)
-        self.vertex_adj_list = vertex_adj_list  # Store vertex adjacency data
         self.adjacency_dict = None  # Store adjacency data
-        
-        # Precompute adjacency information using Open3D
+        # Precompute adjacency and trans matrices information
+        print("Precomputing transformation matrices")
+        self.precompute_triangle_xfm()
+        print("Precomputing adjacency dictionary")
         self.precompute_adjacency()
 
+    def precompute_triangle_xfm(self):
+        """Precompute transformation matrices for all triangles."""
+        triangle_xfm = np.zeros((len(self.faces), 4, 4))
+        triangle_xfm_inv = np.zeros((len(self.faces), 4, 4))
+        for idx in range(len(self.faces)):
+            xfm = self.compute_triangle_xfm(idx)
+            xfm_inv = np.linalg.inv(xfm)
+            triangle_xfm[idx] = xfm
+            triangle_xfm_inv[idx] = xfm_inv
+        self.triangle_xfm = triangle_xfm
+        self.triangle_xfm_inv = triangle_xfm_inv
+
+    def compute_triangle_xfm(self, idx):
+        v1, v2, v3 = self.vertices[self.faces[idx]]
+        # Compute the y-axis as the normalized vector from v1 to v2
+        yaxis = (v2 - v1) / np.linalg.norm(v2 - v1)
+        
+        # Compute the x-axis using the cross product of (v3 - v1) and y-axis, then normalize
+        zaxis = np.cross((v3 - v1) / np.linalg.norm(v3 - v1), yaxis) 
+        zaxis = zaxis / np.linalg.norm(zaxis)
+        
+        # Compute the z-axis using the cross product of y-axis and zaxis, then normalize
+        xaxis = np.cross(yaxis, zaxis)
+        xaxis = xaxis / np.linalg.norm(xaxis)
+
+        # Create the rotation matrix
+        R = np.vstack([xaxis, yaxis, zaxis])
+
+        # Compute the translation component by rotating v1 and taking the negative
+        T = -np.dot(R, v1)
+
+        # Construct the transformation matrix (4x4 homogeneous transformation)
+        xfm = np.eye(4)
+        xfm[:3, :3] = R
+        xfm[:3, 3] = T
+
+        return xfm
     def precompute_adjacency(self):
         """Precompute adjacent faces for all faces and store in a dictionary using Open3D's adjacency list."""
-        adjacency_list = self.vertex_adj_list
         adjacency_dict = {}
         if os.path.exists('adjacency_dict.pkl'):
+            print("Loading adjacency dictionary from file")
             with open('adjacency_dict.pkl', 'rb') as f:
                 self.adjacency_dict = pickle.load(f)
                 return
@@ -169,30 +207,7 @@ def color_mesh_faces(mesh, face_index, adjacent_faces):
     return mesh_new
 
 
-def compute_triangle_xfm(v1, v2, v3):
-    # Compute the y-axis as the normalized vector from v1 to v2
-    yaxis = (v2 - v1) / np.linalg.norm(v2 - v1)
-    
-    # Compute the x-axis using the cross product of (v3 - v1) and y-axis, then normalize
-    zaxis = np.cross((v3 - v1) / np.linalg.norm(v3 - v1), yaxis) 
-    zaxis = zaxis / np.linalg.norm(zaxis)
-    
-    # Compute the z-axis using the cross product of y-axis and zaxis, then normalize
-    xaxis = np.cross(yaxis, zaxis)
-    xaxis = xaxis / np.linalg.norm(xaxis)
 
-    # Create the rotation matrix
-    R = np.vstack([xaxis, yaxis, zaxis])
-
-    # Compute the translation component by rotating v1 and taking the negative
-    T = -np.dot(R, v1)
-
-    # Construct the transformation matrix (4x4 homogeneous transformation)
-    xfm = np.eye(4)
-    xfm[:3, :3] = R
-    xfm[:3, 3] = T
-
-    return xfm
 
 def run_test():
     # dataset = o3d.data.BunnyMesh()
