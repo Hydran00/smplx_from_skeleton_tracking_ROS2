@@ -18,7 +18,6 @@ os.environ['SDL_AUDIODRIVER'] = 'dsp'
 # Define constants for visualization and movement
 SPHERE_RADIUS = 0.01
 BUFFER_AREA = SPHERE_RADIUS*2
-MOVEMENT_SPEED = 0.0003
 VISUALIZE_PLANE_CONSTRAINTS = True
 
 class VirtualFixtureDemo(Node):
@@ -164,47 +163,47 @@ class VirtualFixtureDemo(Node):
                             self.get_logger().info("Error: location not on vertex")
                             exit()
  
-                    keep = False
-                    if len(neighborIdx1) > 0:
-                        neighborIdx1 = neighborIdx1[0]
-                        is_in_cp_list = True
-                        CPia,_ = CP.get(neighborIdx1, [None,None])
-                        if CPia is None:
-                            is_in_cp_list = False
-                            CPia,_ = self.get_closest_on_triangle(self.sphere_center, neighborIdx1)
-                        if (np.linalg.norm(CPia - CPi) < eps):
-                            # remove neighbor1
-                            for face in T[i+1:]:
-                                if face == neighborIdx1:
-                                    idx = np.where(T == face)
-                                    T = np.delete(T, idx)
-                                    if is_in_cp_list:
-                                        CP[face] = [CP[face][0],Location.VOID]
-                                    keep = True
-                                    break
-                    if len(neighborIdx2) > 0:
-                        neighborIdx2 = neighborIdx2[0]
-                        is_in_cp_list = True
-                        CPia,_ = CP.get(neighborIdx2, [None,None])
-                        if CPia is None:
-                            is_in_cp_list = False
-                            CPia,_ = self.get_closest_on_triangle(self.sphere_center, neighborIdx2)
-                        if (np.linalg.norm(CPia - CPi) < eps):
-                            # remove neighbor2
-                            for face in T[i+1:]:
-                                if face == neighborIdx2:
-                                    idx = np.where(T == face)
-                                    T = np.delete(T, idx)
-                                    if is_in_cp_list:
-                                        CP[face] = [CP[face][0],Location.VOID]
-                                    keep = True
-                                    break
-                    if keep:
-                        n = self.sphere_center - CPi
-                        n /= np.linalg.norm(n)
-                        constraint_planes.append([n, CPi])
-                        l += 1
-                        continue
+                        keep = False
+                        if len(neighborIdx1) > 0:
+                            neighborIdx1 = neighborIdx1[0]
+                            is_in_cp_list = True
+                            CPia,_ = CP.get(neighborIdx1, [None,None])
+                            if CPia is None:
+                                is_in_cp_list = False
+                                CPia,_ = self.get_closest_on_triangle(self.sphere_center, neighborIdx1)
+                            if (np.linalg.norm(CPia - CPi) < eps):
+                                # remove neighbor1
+                                for face in T[i+1:]:
+                                    if face == neighborIdx1:
+                                        idx = np.where(T == face)
+                                        T = np.delete(T, idx)
+                                        if is_in_cp_list:
+                                            CP[face] = [CP[face][0],Location.VOID]
+                                        keep = True
+                                        break
+                        if len(neighborIdx2) > 0:
+                            neighborIdx2 = neighborIdx2[0]
+                            is_in_cp_list = True
+                            CPia,_ = CP.get(neighborIdx2, [None,None])
+                            if CPia is None:
+                                is_in_cp_list = False
+                                CPia,_ = self.get_closest_on_triangle(self.sphere_center, neighborIdx2)
+                            if (np.linalg.norm(CPia - CPi) < eps):
+                                # remove neighbor2
+                                for face in T[i+1:]:
+                                    if face == neighborIdx2:
+                                        idx = np.where(T == face)
+                                        T = np.delete(T, idx)
+                                        if is_in_cp_list:
+                                            CP[face] = [CP[face][0],Location.VOID]
+                                        keep = True
+                                        break
+                        if keep:
+                            n = self.sphere_center - CPi
+                            n /= np.linalg.norm(n)
+                            constraint_planes.append([n, CPi])
+                            l += 1
+                            continue
                 
                 # on edge
                 else:

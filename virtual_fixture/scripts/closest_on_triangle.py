@@ -8,6 +8,31 @@ def E(xy, XY, dxdy):
     """
     return round((xy[0] - XY[0]) * dxdy[1] - (xy[1] - XY[1]) * dxdy[0], 6)
 
+def compute_triangle_xfm(v1, v2, v3):
+    # Compute the y-axis as the normalized vector from v1 to v2
+    yaxis = (v2 - v1) / np.linalg.norm(v2 - v1)
+    
+    # Compute the x-axis using the cross product of (v3 - v1) and y-axis, then normalize
+    zaxis = np.cross((v3 - v1) / np.linalg.norm(v3 - v1), yaxis) 
+    zaxis = zaxis / np.linalg.norm(zaxis)
+    
+    # Compute the z-axis using the cross product of y-axis and zaxis, then normalize
+    xaxis = np.cross(yaxis, zaxis)
+    xaxis = xaxis / np.linalg.norm(xaxis)
+
+    # Create the rotation matrix
+    R = np.vstack([xaxis, yaxis, zaxis])
+
+    # Compute the translation component by rotating v1 and taking the negative
+    T = -np.dot(R, v1)
+
+    # Construct the transformation matrix (4x4 homogeneous transformation)
+    xfm = np.eye(4)
+    xfm[:3, :3] = R
+    xfm[:3, 3] = T
+
+    return xfm
+    
 def find_closest_point_on_triangle(point, triXfm, triXfmInv, v1, v2, v3):
     # Transform point to local triangle coordinates
     point_homogeneous = np.append(point, [1.0])
@@ -136,82 +161,82 @@ def run_tests():
     
 
     # Test Case 1: Point exactly at vertex P1
-    # point = np.array([0.0, 0.0, 0.0])
-    # P1 = np.array([0.0, 0.0, 0.0])
-    # P2 = np.array([1.0, 0.0, 0.0])
-    # P3 = np.array([0.0, 1.0, 0.0])
-    # triXfm = compute_triangle_xfm(P1, P2, P3)
-    # triXfmInv = np.linalg.inv(triXfm)
+    point = np.array([0.0, 0.0, 0.0])
+    P1 = np.array([0.0, 0.0, 0.0])
+    P2 = np.array([1.0, 0.0, 0.0])
+    P3 = np.array([0.0, 1.0, 0.0])
+    triXfm = compute_triangle_xfm(P1, P2, P3)
+    triXfmInv = np.linalg.inv(triXfm)
 
-    # closestPoint, location = find_closest_point_on_triangle(point, triXfm, triXfmInv, P1, P2, P3)
-    # print(triXfm, closestPoint, location)
-    # visualize_test_case(P1, P2, P3, point, closestPoint, location)
+    closestPoint, location = find_closest_point_on_triangle(point, triXfm, triXfmInv, P1, P2, P3)
+    print(triXfm, closestPoint, location)
+    visualize_test_case(P1, P2, P3, point, closestPoint, location)
 
-    # # Test Case 2: Point exactly at vertex P2
-    # point = np.array([1.0, 0.0, 0.0])
-    # P1 = np.array([0.0, 0.0, 0.0])
-    # P2 = np.array([1.0, 0.0, 0.0])
-    # P3 = np.array([0.0, 1.0, 0.0])
-    # triXfm = compute_triangle_xfm(P1, P2, P3)
-    # triXfmInv = np.linalg.inv(triXfm)
-    # closestPoint, location = find_closest_point_on_triangle(point, triXfm, triXfmInv, P1, P2, P3)
-    # print(closestPoint, location)
-    # visualize_test_case(P1, P2, P3, point, closestPoint, location)
+    # Test Case 2: Point exactly at vertex P2
+    point = np.array([1.0, 0.0, 0.0])
+    P1 = np.array([0.0, 0.0, 0.0])
+    P2 = np.array([1.0, 0.0, 0.0])
+    P3 = np.array([0.0, 1.0, 0.0])
+    triXfm = compute_triangle_xfm(P1, P2, P3)
+    triXfmInv = np.linalg.inv(triXfm)
+    closestPoint, location = find_closest_point_on_triangle(point, triXfm, triXfmInv, P1, P2, P3)
+    print(closestPoint, location)
+    visualize_test_case(P1, P2, P3, point, closestPoint, location)
 
-    # # Test Case 3: Point exactly at vertex P3
-    # point = np.array([0.0, 1.0, 0.0])
-    # P1 = np.array([0.0, 0.0, 0.0])
-    # P2 = np.array([1.0, 0.0, 0.0])
-    # P3 = np.array([0.0, 1.0, 0.0])
-    # triXfm = compute_triangle_xfm(P1, P2, P3)
-    # triXfmInv = np.linalg.inv(triXfm)
-    # closestPoint, location = find_closest_point_on_triangle(point, triXfm, triXfmInv, P1, P2, P3)
-    # print(closestPoint, location)
-    # visualize_test_case(P1, P2, P3, point, closestPoint, location)
+    # Test Case 3: Point exactly at vertex P3
+    point = np.array([0.0, 1.0, 0.0])
+    P1 = np.array([0.0, 0.0, 0.0])
+    P2 = np.array([1.0, 0.0, 0.0])
+    P3 = np.array([0.0, 1.0, 0.0])
+    triXfm = compute_triangle_xfm(P1, P2, P3)
+    triXfmInv = np.linalg.inv(triXfm)
+    closestPoint, location = find_closest_point_on_triangle(point, triXfm, triXfmInv, P1, P2, P3)
+    print(closestPoint, location)
+    visualize_test_case(P1, P2, P3, point, closestPoint, location)
 
-    # # Test Case 4: Point on edge P1P2 but not at vertices
-    # point = np.array([0.5, 0.0, 0.0])
-    # P1 = np.array([0.0, 0.0, 0.0])
-    # P2 = np.array([1.0, 0.0, 0.0])
-    # P3 = np.array([0.0, 1.0, 0.0])
-    # triXfm = compute_triangle_xfm(P1, P2, P3)
-    # triXfmInv = np.linalg.inv(triXfm)
-    # closestPoint, location = find_closest_point_on_triangle(point, triXfm, triXfmInv, P1, P2, P3)
-    # print(closestPoint, location)
-    # visualize_test_case(P1, P2, P3, point, closestPoint, location)
+    # Test Case 4: Point on edge P1P2 but not at vertices
+    point = np.array([0.5, 0.0, 0.0])
+    P1 = np.array([0.0, 0.0, 0.0])
+    P2 = np.array([1.0, 0.0, 0.0])
+    P3 = np.array([0.0, 1.0, 0.0])
+    triXfm = compute_triangle_xfm(P1, P2, P3)
+    triXfmInv = np.linalg.inv(triXfm)
+    closestPoint, location = find_closest_point_on_triangle(point, triXfm, triXfmInv, P1, P2, P3)
+    print(closestPoint, location)
+    visualize_test_case(P1, P2, P3, point, closestPoint, location)
 
-    # # Test Case 5: Point on edge P1P3 but not at vertices
-    # point = np.array([0.0, 0.5, 0.0])
-    # P1 = np.array([0.0, 0.0, 0.0])
-    # P2 = np.array([1.0, 0.0, 0.0])
-    # P3 = np.array([0.0, 1.0, 0.0])
-    # triXfm = compute_triangle_xfm(P1, P2, P3)
-    # triXfmInv = np.linalg.inv(triXfm)
-    # closestPoint, location = find_closest_point_on_triangle(point, triXfm, triXfmInv, P1, P2, P3)
-    # print(closestPoint, location)
-    # visualize_test_case(P1, P2, P3, point, closestPoint, location)
+    # Test Case 5: Point on edge P1P3 but not at vertices
+    point = np.array([0.0, 0.5, 0.0])
+    P1 = np.array([0.0, 0.0, 0.0])
+    P2 = np.array([1.0, 0.0, 0.0])
+    P3 = np.array([0.0, 1.0, 0.0])
+    triXfm = compute_triangle_xfm(P1, P2, P3)
+    triXfmInv = np.linalg.inv(triXfm)
+    closestPoint, location = find_closest_point_on_triangle(point, triXfm, triXfmInv, P1, P2, P3)
+    print(closestPoint, location)
+    visualize_test_case(P1, P2, P3, point, closestPoint, location)
 
-    # # Test Case 6: Point on edge P2P3 but not at vertices
-    # point = np.array([0.5, 0.5, 0.0])
-    # P1 = np.array([0.0, 0.0, 0.0])
-    # P2 = np.array([1.0, 0.0, 0.0])
-    # P3 = np.array([0.0, 1.0, 0.0])
-    # triXfm = compute_triangle_xfm(P1, P2, P3)
-    # triXfmInv = np.linalg.inv(triXfm)
-    # closestPoint, location = find_closest_point_on_triangle(point, triXfm, triXfmInv, P1, P2, P3)
-    # print(closestPoint, location)
-    # visualize_test_case(P1, P2, P3, point, closestPoint, location)
+    # Test Case 6: Point on edge P2P3 but not at vertices
+    point = np.array([0.5, 0.5, 0.0])
+    P1 = np.array([0.0, 0.0, 0.0])
+    P2 = np.array([1.0, 0.0, 0.0])
+    P3 = np.array([0.0, 1.0, 0.0])
+    triXfm = compute_triangle_xfm(P1, P2, P3)
+    triXfmInv = np.linalg.inv(triXfm)
+    closestPoint, location = find_closest_point_on_triangle(point, triXfm, triXfmInv, P1, P2, P3)
+    print(closestPoint, location)
+    visualize_test_case(P1, P2, P3, point, closestPoint, location)
 
-    # # Test Case 7: Point inside the triangle
-    # point = np.array([0.25, 0.25, 0.0])
-    # P1 = np.array([0.0, 0.0, 0.0])
-    # P2 = np.array([1.0, 0.0, 0.0])
-    # P3 = np.array([0.0, 1.0, 0.0])
-    # triXfm = compute_triangle_xfm(P1, P2, P3)
-    # triXfmInv = np.linalg.inv(triXfm)
-    # closestPoint, location = find_closest_point_on_triangle(point, triXfm, triXfmInv, P1, P2, P3)
-    # print(closestPoint, location)   
-    # visualize_test_case(P1, P2, P3, point, closestPoint, location)
+    # Test Case 7: Point inside the triangle
+    point = np.array([0.25, 0.25, 0.0])
+    P1 = np.array([0.0, 0.0, 0.0])
+    P2 = np.array([1.0, 0.0, 0.0])
+    P3 = np.array([0.0, 1.0, 0.0])
+    triXfm = compute_triangle_xfm(P1, P2, P3)
+    triXfmInv = np.linalg.inv(triXfm)
+    closestPoint, location = find_closest_point_on_triangle(point, triXfm, triXfmInv, P1, P2, P3)
+    print(closestPoint, location)   
+    visualize_test_case(P1, P2, P3, point, closestPoint, location)
 
     # # Test Case 8: Point outside the triangle
     point = np.array([0.4, 1.1, -0.0])
@@ -240,5 +265,4 @@ def run_tests():
     visualize_test_case(P1, P2, P3, point, closestPoint, location)    
 
 if __name__ == "__main__":
-    from math_utils import compute_triangle_xfm
     run_tests()
