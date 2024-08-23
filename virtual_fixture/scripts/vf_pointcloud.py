@@ -23,7 +23,7 @@ SPHERE_RADIUS = 0.01
 BUFFER_AREA = SPHERE_RADIUS*2
 MOVEMENT_SPEED = 0.0003
 VISUALIZE_PLANE_CONSTRAINTS = True
-USE_ROS_AS_INPUT = True
+USE_ROS_AS_INPUT = False
 class VirtualFixtureDemo(Node):
     def __init__(self):
         super().__init__('virtual_fixture_demo')
@@ -41,14 +41,15 @@ class VirtualFixtureDemo(Node):
             pygame.init()
             pygame.display.set_mode((screen_width, screen_height))        
         # Load and prepare the surface (bunny mesh)
-        # dataset = o3d.data.BunnyMesh()
-        # self.surface = o3d.io.read_triangle_mesh(dataset.path)
+        dataset = o3d.data.KnotMesh()
+        self.surface = o3d.io.read_triangle_mesh(dataset.path)
         # self.surface = o3d.io.read_triangle_mesh(os.path.expanduser('~') + '/SKEL_WS/ros2_ws/bunny.ply')
-        self.surface = o3d.io.read_triangle_mesh(os.path.expanduser('~') + '/SKEL_WS/ros2_ws/projected_skel.ply')
+        # self.surface = o3d.io.read_triangle_mesh(os.path.expanduser('~') + '/SKEL_WS/ros2_ws/projected_skel.ply')
         
+
         # self.surface = o3d.io.read_triangle_mesh(os.path.expanduser('~') + '/SKEL_WS/ros2_ws/Skull.stl')
         # self.surface.remove_duplicated_vertices()
-        # self.surface.scale(1/1000, center=(0,0,0))
+        self.surface.scale(2/1000, center=(0,0,0))
 
         self.surface.compute_triangle_normals()
         self.surface.orient_triangles()
@@ -70,7 +71,7 @@ class VirtualFixtureDemo(Node):
         self.get_logger().info("Computing adj list")
         self.surface.compute_adjacency_list()
         self.get_logger().info("initializing edge adj list")
-        self.mesh = math_utils.Mesh(self.vertices, self.triangles, self.triangle_normals, self.surface.adjacency_list)
+        self.mesh = math_utils.Mesh(self.vertices, self.triangles, self.triangle_normals)
         self.get_logger().info("Mesh created")
 
 
@@ -211,7 +212,7 @@ class VirtualFixtureDemo(Node):
 
             # Check if CPi is in the triangle and the normal points towards the sphere center
             if cpi_loc == Location.IN:
-                if Ni.T @ (self.sphere_center - CPi) >= 0:
+                if Ni.T @ (self.sphere_center - CPi) >= -eps:
                     constraint_planes.append([Ni, CPi])
                     continue
             
@@ -333,7 +334,7 @@ class VirtualFixtureDemo(Node):
                                         continue
                         
                             # if convex and on the positive side of normal
-                            elif cpia_loc != Location.VOID and Ni.T @ (self.sphere_center - CPi) >= 0:
+                            elif cpia_loc != Location.VOID and Ni.T @ (self.sphere_center - CPi) >= -eps:
                                 constraint_planes.append([Ni, CPi])
                                 l += 1
                                 continue
