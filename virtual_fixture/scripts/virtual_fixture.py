@@ -12,7 +12,6 @@ import open3d as o3d
 import os
 import trimesh
 from ctypes import *
-from visualize_model import Visualizer
 from geometry_msgs.msg import PoseStamped
 from visualization_msgs.msg import MarkerArray, Marker
 from virtual_fixture_msgs.msg import Areas
@@ -34,9 +33,8 @@ class VirtualFixture(Node):
         # self.target_framesubscribtion = self.create_subscription(PoseStamped, 'target_frame', self.apply_virtual_fixture, 1)
         self.mesh_publisher = self.create_publisher(Marker, 'visualization_marker', 1)
         self.load_path = os.path.expanduser('~')+"/SKEL_WS/SKEL/output/smpl_fit/smpl_fit_skin.obj"
-        self.skin_save_path = os.path.expanduser('~')+"/ros2_ws/output_mesh.obj"
+        self.skin_save_path = os.path.expanduser('~')+"/SKEL_WS/ros2_ws/skin_mesh.obj"
         self.areas_save_path_prefix = os.path.expanduser('~')+"/ros2_ws/areas"
-        self.visualizer = Visualizer()
         self.vis_update_timer = self.create_timer(0.03, self.update_viz)
         # self.areas_pub = self.create_publisher(Areas, 'areas', 1)
         self.areas = None
@@ -44,7 +42,7 @@ class VirtualFixture(Node):
         
         mesh = o3d.io.read_triangle_mesh(self.load_path)
 
-        self.output_path = os.path.expanduser('~')+"/SKEL_WS/ros2_ws/projected_skel.ply"
+        self.output_path = os.path.expanduser('~')+"/SKEL_WS/ros2_ws/projected_skel.obj"
         rib_cage = utils.compute_torax_projection(mesh)
         rib_cage = rib_cage.to_legacy()
         
@@ -57,7 +55,9 @@ class VirtualFixture(Node):
             rib_cage = rib_cage_new.to_legacy()
 
         self.transform_mesh(rib_cage)
+        self.transform_mesh(mesh)
         o3d.io.write_triangle_mesh(self.output_path, rib_cage, write_ascii=True)
+        o3d.io.write_triangle_mesh(self.skin_save_path, mesh, write_ascii=True)
         self.get_logger().info("Clear rviz")
         utils.clear_meshes(self.mesh_publisher)
         time.sleep(1.0)
@@ -67,12 +67,12 @@ class VirtualFixture(Node):
         # self.transitioning_between_areas = True
     
     def update_viz(self):
-        self.visualizer.update()   
-        
+        pass
+
     def transform_mesh(self, mesh):
         R = mesh.get_rotation_matrix_from_xyz((np.pi,0,0))
-        mesh.rotate(R,center=mesh.get_center())
-        mesh.translate((0,0.3,0),relative=False)
+        mesh.rotate(R, center=(0,0,0))
+        mesh.translate((-0.12,0.3,1.6),relative=True)
 
     def publish_areas(self):
         if self.areas is not None:
