@@ -14,7 +14,7 @@ ament_python_install_package(${PROJECT_NAME})
 install(PROGRAMS
   scripts/visualize_model.py
   scripts/virtual_fixture.py
-  scripts/vf_pointcloud.py
+  scripts/virtual_fixture_test.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

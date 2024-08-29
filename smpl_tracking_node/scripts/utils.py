@@ -147,56 +147,7 @@ class MaxMixturePrior(nn.Module):
         else:
             return self.log_likelihood(pose, betas)
         
-    
-def compute_distance_from_pelvis_joint_to_surface(self, it):
-    # SPONSORED BY https://github.com/matteodv99tn
-    # define scene
-    humanoid = o3d.t.geometry.TriangleMesh.from_legacy(self.mesh)
-    scene = o3d.t.geometry.RaycastingScene()
-    scene.add_triangles(humanoid)
-    
-    # use open3d ray casting to compute distance from pelvis joint to surface
-    start = self.global_position[0].cpu().detach().numpy()
-    
-    # direction is the third column of the global rotation matrix
-    rotm = scipy.spatial.transform.Rotation.from_rotvec(self.global_orient.cpu().detach().numpy())
-    direction = rotm.as_matrix()[:, 2][0]
-    
-    self.logger.info(f"start: {start}")
-    self.logger.info(f"direction: {direction}")
-    
-    ray = o3d.core.Tensor([ [*start, *direction]], dtype=o3d.core.Dtype.Float32)
-    
-    ans = scene.cast_rays(ray)
-    
-    
-    # Visualize
-    length = 2.0
-    end = start + length * direction
-    points = [start, end]
-    lines = [[0, 1]]
-    colors = [[1, 0, 0]]  # Red color for the line
-
-    line_set = o3d.geometry.LineSet()
-    line_set.points = o3d.utility.Vector3dVector(points)
-    line_set.lines = o3d.utility.Vector2iVector(lines)
-    line_set.colors = o3d.utility.Vector3dVector(colors)
-
-    # Step 4: Visualize the LineSet
-    if it==0:
-        self.viz.add_geometry(line_set)
-    else:
-        self.viz.update_geometry(line_set)
-    
-    self.logger.info(f"Distance from pelvis joint to surface: {ans}")
-    self.logger.info(f"Vertex ID: {ans['primitive_ids']}")
-    
-
-    offset = ans['t_hit'][0].cpu().numpy()
-    return offset * direction
-
-
-def compute_distance_from_pelvis_joint_to_surface(human_mesh, global_position, global_orient):
+def project_on_mesh(human_mesh, point, global_orient):
     # SUGGESTED BY https://github.com/matteodv99tn
     # define scene
     humanoid = o3d.t.geometry.TriangleMesh.from_legacy(human_mesh)
@@ -204,7 +155,7 @@ def compute_distance_from_pelvis_joint_to_surface(human_mesh, global_position, g
     scene.add_triangles(humanoid)
     
     # use open3d ray casting to compute distance from pelvis joint to surface
-    start = global_position[0].cpu().detach().numpy()
+    start = point[0].cpu().detach().numpy()
     
     # direction is the third column of the global rotation matrix
     rotm = scipy.spatial.transform.Rotation.from_rotvec(global_orient.cpu().detach().numpy())
@@ -230,11 +181,8 @@ def compute_distance_from_pelvis_joint_to_surface(human_mesh, global_position, g
     # line_set.colors = o3d.utility.Vector3dVector(colors)
 
     # # Step 4: Visualize the LineSet
-    # if it==0:
-    #     viz.add_geometry(line_set)
-    # else:
-    #     viz.update_geometry(line_set)
-    
+    # # if it==0:
+    # o3d.visualization.draw_geometries([line_set, human_mesh])
     
     # self.logger.info(f"Distance from pelvis joint to surface: {ans}")
     # self.logger.info(f"Vertex ID: {ans['primitive_ids']}")
@@ -243,6 +191,7 @@ def compute_distance_from_pelvis_joint_to_surface(human_mesh, global_position, g
     # block(viz)
     return offset * direction
 
+# def distance_from_joint_to_surface(human_mesh,)
 
 def block(viz):
     while True:

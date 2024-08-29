@@ -29,7 +29,8 @@ class VirtualFixtureCalculator(Node):
         
         
         EXTRUDE = False
-        if EXTRUDE:
+        if False:
+            print("Extruding rib cage")
             rib_cage_new = o3d.t.geometry.TriangleMesh.from_legacy(rib_cage)
             rib_cage_new = rib_cage_new.extrude_linear([0,0,-0.05])
             o3d.visualization.draw_geometries([rib_cage_new.to_legacy()])

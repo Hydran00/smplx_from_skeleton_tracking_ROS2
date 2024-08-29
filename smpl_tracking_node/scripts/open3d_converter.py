@@ -7,7 +7,7 @@ import struct
 from ctypes import *
 
 
-MAX_POINTS = 80000
+
 # The data structure of each point in ros PointCloud2: 16 bits = x + y + z + rgb
 FIELDS_XYZ = [
     PointField(name='x', offset=0, datatype=PointField.FLOAT32, count=1),
@@ -30,7 +30,7 @@ convert_rgbFloat_to_tuple = lambda rgb_float: convert_rgbUint32_to_tuple(
 # filtered_data_idx = 0
 # old_max = 0
 
-def fromPointCloud2(node, buffer, ros_cloud):
+def fromPointCloud2(node, buffer, ros_cloud, max_points):
     # global filtered_data_idx, old_max
     # Get cloud data from ros_cloud
     field_names=[field.name for field in ros_cloud.fields]
@@ -39,7 +39,7 @@ def fromPointCloud2(node, buffer, ros_cloud):
     # if len(cloud_data)> old_max:
     #     # extract randomly 10k points
     # filtered_data_idx = np.random.choice(len(cloud_data), min(10000, len(cloud_data)), replace=False)
-    filtered_data_idx = np.random.choice(len(cloud_data), min(len(cloud_data),MAX_POINTS), replace=False)
+    filtered_data_idx = np.random.choice(len(cloud_data), min(len(cloud_data),max_points), replace=False)
     #     old_max = len(cloud_data)
     
     

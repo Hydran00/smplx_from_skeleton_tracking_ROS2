@@ -40,32 +40,6 @@ ZED_BODY_38= {
     "RIGHT_HAND_PINK_1" : 37,
     "LAST" : 38
 }
-SMPL_BODY_24 = [
-    "pelvis", 
-    "left_hip", # 0
-    "right_hip", # 1
-    "spine1", # 2
-    "left_knee", # 3
-    "right_knee", # 4
-    "spine2", # 5
-    "left_ankle", # 6
-    "right_ankle", # 7
-    "spine3", # 8
-    "left_foot", # 9
-    "right_foot", # 10
-    "neck", # 11
-    "left_collar", # 12
-    "right_collar", # 13
-    "head", # 14
-    "left_shoulder", # 15
-    "right_shoulder", # 16
-    "left_elbow", # 17
-    "right_elbow", # 18
-    "left_wrist", # 19
-    "right_wrist", # 20
-    "left_hand", # 21
-    "right_hand", # 22
-]
 
 ZED_BODY_38_TO_SMPL_BODY_24 = [
     ZED_BODY_38["PELVIS"], #0
@@ -120,8 +94,59 @@ ZED_BODY_38_TO_SMPL_BODY_24_MIRROR = [
     ZED_BODY_38["RIGHT_HAND_THUMB_4"], #21
     ZED_BODY_38["LEFT_HAND_THUMB_4"] #22
 ]
+SMPL_BODY_24 = [
+    "pelvis", 
+    "left_hip", # 0
+    "right_hip", # 1
+    "spine1", # 2
+    "left_knee", # 3
+    "right_knee", # 4
+    "spine2", # 5
+    "left_ankle", # 6
+    "right_ankle", # 7
+    "spine3", # 8
+    "left_foot", # 9
+    "right_foot", # 10
+    "neck", # 11
+    "left_collar", # 12
+    "right_collar", # 13
+    "head", # 14
+    "left_shoulder", # 15
+    "right_shoulder", # 16
+    "left_elbow", # 17
+    "right_elbow", # 18
+    "left_wrist", # 19
+    "right_wrist", # 20
+    "left_hand", # 21
+    "right_hand", # 22
+]
 
-
+SMPL_JOINT_TO_FACE = {
+    "pelvis", 
+    "left_hip", # 0
+    "right_hip", # 1
+    "spine1", # 2
+    "left_knee", # 3
+    "right_knee", # 4
+    "spine2", # 5
+    "left_ankle", # 6
+    "right_ankle", # 7
+    "spine3", # 8
+    "left_foot", # 9
+    "right_foot", # 10
+    "neck", # 11
+    "left_collar", # 12
+    "right_collar", # 13
+    "head", # 14
+    "left_shoulder", # 15
+    "right_shoulder", # 16
+    "left_elbow", # 17
+    "right_elbow", # 18
+    "left_wrist", # 19
+    "right_wrist", # 20
+    "left_hand", # 21
+    "right_hand", # 22
+}
 # LUNG_US_SMPL_VERTICES = {
 #     "right_basal_midclavicular" : 928, #661,#929      # 13
 #     "right_upper_midclavicular": 594, #595,#596       # 14

@@ -150,13 +150,15 @@ def compute_torax_projection(mesh):
             # ensure that edges are smaller than 0.02 meter
             if (np.linalg.norm(v1-v2) < edge_threshold) and (np.linalg.norm(v2-v3) < edge_threshold) and (np.linalg.norm(v1-v3) < edge_threshold):
                 valid_triangles.append(tri)
-         
+
+
     # Create a new mesh with the filtered triangles
     valid_triangles = np.array(valid_triangles)
     filtered_mesh = o3d.geometry.TriangleMesh()
+    filtered_mesh.vertices = o3d.utility.Vector3dVector(vertices)
+    filtered_mesh.triangles = o3d.utility.Vector3iVector(valid_triangles)
+    filtered_mesh.remove_duplicated_vertices()     
     filtered_mesh = o3d.t.geometry.TriangleMesh.from_legacy(filtered_mesh)
-    filtered_mesh.vertex.positions = o3d.core.Tensor(vertices, dtype=o3d.core.Dtype.Float32)
-    filtered_mesh.triangle.indices = o3d.core.Tensor(valid_triangles, dtype=o3d.core.Dtype.Int32)
     # filtered_mesh.compute_vertex_normals()
     # # filtered_mesh.paint_uniform_color([1, 0, 0])
     triangle_colors = np.ones((len(filtered_mesh.triangle.indices), 3))
