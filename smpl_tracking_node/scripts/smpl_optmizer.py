@@ -29,10 +29,10 @@ class SMPLModelOptimizer:
     def get_mask_upper_body(self):
         mask = torch.ones((1,72), device='cuda:0')
         # mask neck
-        # mask[0, 12*3:12*3+3] = 0
+        mask[0, 12*3:12*3+3] = 0
         # # mask head
-        # mask[0, 13*3:13*3+3] = 0
-        # mask[0, 15*3:15*3+3] = 0
+        mask[0, 13*3:13*3+3] = 0
+        mask[0, 15*3:15*3+3] = 0
         # mask legs [4,5,7,8,10,11]
         mask[0, 1*3:1*3+3] = 0
         mask[0, 2*3:2*3+3] = 0

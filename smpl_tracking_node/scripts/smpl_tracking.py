@@ -34,8 +34,6 @@ NUM_BODY_JOINTS = 21 # 24 - 3 (transl/pelvis and hands)
 NUM_FACE_JOINTS = 3
 NUM_HAND_JOINTS = 15
 
-
-
 # Device configuration
 DEVICE = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 

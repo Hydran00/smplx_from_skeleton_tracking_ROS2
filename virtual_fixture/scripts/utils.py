@@ -46,18 +46,31 @@ def compute_torax_projection(mesh):
     skel_path =os.path.expanduser('~')+"/SKEL_WS/SKEL/output/smpl_fit/smpl_fit_skel.obj"
     skel_model = o3d.io.read_triangle_mesh(skel_path)
     faces_list_file_path = get_package_share_directory("virtual_fixture")+ '/skel_regions/full_torax.txt'
+    rib_l_path = os.path.expanduser('~')+"/SKEL_WS/SKEL/output/smpl_fit/rib4_l.txt"
     projection_method = "radial" # "linear" or "radial"
     
+    rib_l_faces = []
+
     with open(faces_list_file_path, 'r') as file:
         lines = file.readlines()
         # lines are in the format a b c d e and I want e
         skel_faces = [int(line.split()[4]) for line in lines]
     
+    with open(rib_l_path, 'r') as file:
+        lines = file.readlines()
+        # lines are in the format a b c d e and I want e
+        rib_l_faces = [int(line.split()[4]) for line in lines]
+    
     skel_center_vertex_id = 25736
 
     skel_model_new  = o3d.t.geometry.TriangleMesh.from_legacy(skel_model)
     color_faces(skel_model_new, skel_faces, [1.0, 0.0, 0.0])
+
+    rib_model_new  = o3d.t.geometry.TriangleMesh.from_legacy(skel_model)
+    color_faces(rib_model_new, rib_l_faces, [0.0, 1.0, 0.0])
+
     o3d.visualization.draw([skel_model_new])
+    o3d.visualization.draw([rib_model_new])
 
     scene = o3d.t.geometry.RaycastingScene()
     scene.add_triangles(humanoid)
@@ -104,6 +117,11 @@ def compute_torax_projection(mesh):
     mesh_projected = o3d.t.geometry.TriangleMesh()
     vertices = np.zeros((len(skel_faces)*3,3))
     faces = np.zeros((len(skel_faces),3))
+
+    rib_proj_vertices = np.zeros((len(rib_l_faces)*3,3))
+    rib_proj_faces = np.zeros((len(rib_l_faces),3))
+    print("RIB l cage: ",rib_l_faces)
+    j=0
     for i, skel_face in enumerate(tqdm(skel_faces)):
         skel_face_vertices = []
         skel_face_vertices.append(skel_vertex_positions[skel_face_vertices_idx[i][0]])
@@ -128,6 +146,23 @@ def compute_torax_projection(mesh):
             vertices[i*3+1][:] = new_point2
             vertices[i*3+2][:] = new_point3
             faces[i] = [i*3,i*3+1,i*3+2]
+            if(skel_face in rib_l_faces):
+                rib_proj_vertices[j*3][:] = new_point1
+                rib_proj_vertices[j*3+1][:] = new_point2
+                rib_proj_vertices[j*3+2][:] = new_point3
+                rib_proj_faces[j] = [j*3,j*3+1,j*3+2]
+                j+=1
+    mesh_rib_proj = o3d.geometry.TriangleMesh()
+    print(rib_proj_vertices)
+    print(rib_proj_faces)
+    mesh_rib_proj.vertices = o3d.utility.Vector3dVector(rib_proj_vertices)
+    mesh_rib_proj.triangles = o3d.utility.Vector3iVector(rib_proj_faces)
+    mesh_rib_proj.compute_vertex_normals()
+    mesh_rib_proj.paint_uniform_color([0, 1, 0])    
+    o3d.visualization.draw_geometries([mesh_rib_proj])
+    # dump
+    o3d.io.write_triangle_mesh("rib_proj.obj", mesh_rib_proj)
+
 
     mesh_projected.vertex.positions = o3d.core.Tensor(vertices, dtype=o3d.core.Dtype.Float32)
     mesh_projected.triangle.indices = o3d.core.Tensor(faces, dtype=o3d.core.Dtype.Int32)
@@ -198,7 +233,7 @@ def compute_torax_projection(mesh):
     ]
 
     humanoid.compute_vertex_normals()
-    # o3d.visualization.draw(geometries)
+    o3d.visualization.draw(geometries)
     # dump pointcloud to file
     pcd_legacy = pcd.to_legacy()
     o3d.io.write_point_cloud("pcd.ply", pcd_legacy, write_ascii=True) 

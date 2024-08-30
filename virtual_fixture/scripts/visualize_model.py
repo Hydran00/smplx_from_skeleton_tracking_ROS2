@@ -44,16 +44,16 @@ def visualize_normals(triangles,normals, length):
 
 if __name__=="__main__":
     # Load the mesh
-    mesh = o3d.io.read_triangle_mesh(os.path.expanduser('~') + '/SKEL_WS/ros2_ws/projected_skel.obj')
+    mesh = o3d.io.read_triangle_mesh(os.path.expanduser('~') + '/SKEL_WS/ros2_ws/tube.obj')
     # dataset = o3d.data.KnotMesh()
     # mesh = o3d.io.read_triangle_mesh(dataset.path)
     # mesh.scale(0.002, center=mesh.get_center())
     
     # sphere
     # mesh = o3d.geometry.TriangleMesh.create_sphere(radius=0.1)
-    # mesh.compute_triangle_normals()
-    # mesh.orient_triangles()
-    # mesh.normalize_normals()
+    mesh.compute_triangle_normals()
+    mesh.orient_triangles()
+    mesh.normalize_normals()
 
     # Create a LineSet for visualizing normals
     lines = []
