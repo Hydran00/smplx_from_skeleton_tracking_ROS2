@@ -36,6 +36,7 @@ import time
 from materials import mat_sphere_transparent, mat_skin
 from tqdm import tqdm
 from ament_index_python.packages import get_package_share_directory
+from rib_boundary import retrieve_vf_from_rib
 
 def compute_torax_projection(mesh):
     """
@@ -46,20 +47,33 @@ def compute_torax_projection(mesh):
     skel_path =os.path.expanduser('~')+"/SKEL_WS/SKEL/output/smpl_fit/smpl_fit_skel.obj"
     skel_model = o3d.io.read_triangle_mesh(skel_path)
     faces_list_file_path = get_package_share_directory("virtual_fixture")+ '/skel_regions/full_torax.txt'
-    rib_l_path = os.path.expanduser('~')+"/SKEL_WS/SKEL/output/smpl_fit/rib4_l.txt"
+    ribs_path_prefix = os.path.expanduser('~')+"/SKEL_WS/ros2_ws/src/smplx_from_skeleton_tracking_ROS2/virtual_fixture/skel_regions/rib_"
+    available_ribs = [(2,'r'),(3,'r'),(3,'l')]
+    
     projection_method = "radial" # "linear" or "radial"
     
     rib_l_faces = []
-
+    
+    # list of faces for the down line of the available ribs
+    ribs_down_faces = []
+    # list of faces for the upper line of the available ribs
+    ribs_up_faces = []
     with open(faces_list_file_path, 'r') as file:
         lines = file.readlines()
         # lines are in the format a b c d e and I want e
         skel_faces = [int(line.split()[4]) for line in lines]
-    
-    with open(rib_l_path, 'r') as file:
-        lines = file.readlines()
-        # lines are in the format a b c d e and I want e
-        rib_l_faces = [int(line.split()[4]) for line in lines]
+    for rib in available_ribs:
+        path_down = ribs_path_prefix+str(rib[0])+"_"+rib[1]+"_down.txt"
+        with open(path_down, 'r') as file:
+            lines = file.readlines()
+            # lines are in the format a b c d e and I want e
+            ribs_down_faces.append([int(line.split()[4]) for line in lines])
+        path_up = ribs_path_prefix+str(rib[0])+"_"+rib[1]+"_up.txt"
+        with open(path_up, 'r') as file:
+            lines = file.readlines()
+            # lines are in the format a b c d e and I want e
+            ribs_up_faces.append([int(line.split()[4]) for line in lines])
+        
     
     skel_center_vertex_id = 25736
 
@@ -118,10 +132,10 @@ def compute_torax_projection(mesh):
     vertices = np.zeros((len(skel_faces)*3,3))
     faces = np.zeros((len(skel_faces),3))
 
-    rib_proj_vertices = np.zeros((len(rib_l_faces)*3,3))
-    rib_proj_faces = np.zeros((len(rib_l_faces),3))
+    ribs_down_vertices = [[] for i in range(len(ribs_down_faces))]
+    ribs_up_vertices = [[] for i in range(len(ribs_up_faces))]
+
     print("RIB l cage: ",rib_l_faces)
-    j=0
     for i, skel_face in enumerate(tqdm(skel_faces)):
         skel_face_vertices = []
         skel_face_vertices.append(skel_vertex_positions[skel_face_vertices_idx[i][0]])
@@ -146,103 +160,117 @@ def compute_torax_projection(mesh):
             vertices[i*3+1][:] = new_point2
             vertices[i*3+2][:] = new_point3
             faces[i] = [i*3,i*3+1,i*3+2]
-            if(skel_face in rib_l_faces):
-                rib_proj_vertices[j*3][:] = new_point1
-                rib_proj_vertices[j*3+1][:] = new_point2
-                rib_proj_vertices[j*3+2][:] = new_point3
-                rib_proj_faces[j] = [j*3,j*3+1,j*3+2]
-                j+=1
-    mesh_rib_proj = o3d.geometry.TriangleMesh()
-    print(rib_proj_vertices)
-    print(rib_proj_faces)
-    mesh_rib_proj.vertices = o3d.utility.Vector3dVector(rib_proj_vertices)
-    mesh_rib_proj.triangles = o3d.utility.Vector3iVector(rib_proj_faces)
-    mesh_rib_proj.compute_vertex_normals()
-    mesh_rib_proj.paint_uniform_color([0, 1, 0])    
-    o3d.visualization.draw_geometries([mesh_rib_proj])
-    # dump
-    o3d.io.write_triangle_mesh("rib_proj.obj", mesh_rib_proj)
-
-
-    mesh_projected.vertex.positions = o3d.core.Tensor(vertices, dtype=o3d.core.Dtype.Float32)
-    mesh_projected.triangle.indices = o3d.core.Tensor(faces, dtype=o3d.core.Dtype.Int32)
+            
+            # iter available down ribs
+            for j,rib_down in enumerate(ribs_down_faces):
+                if skel_face in rib_down:
+                    # take just the vertices with highest y
+                    points = np.array([new_point1,new_point2,new_point3])
+                    ribs_down_vertices[j].append(points[np.argmax(points[:,1])])
+            # iter available up ribs
+            for j,rib_up in enumerate(ribs_up_faces):
+                if skel_face in rib_up:
+                    # take just the vertices with lowest y
+                    points = np.array([new_point1,new_point2,new_point3])
+                    ribs_up_vertices[j].append(points[np.argmin(points[:,1])])
     
-    vertices = mesh_projected.vertex.positions.cpu().numpy()
-    triangles = mesh_projected.triangle.indices.cpu().numpy()
-    def triangle_area(v1, v2, v3):
-        return 0.5 * np.linalg.norm(np.cross(v2 - v1, v3 - v1))
+    final_vf = o3d.t.geometry.TriangleMesh()
+    for i in range(len(ribs_down_vertices)):
+        print("RIB ",i)
+        pc_down = o3d.geometry.PointCloud()
+        pc_down.points = o3d.utility.Vector3dVector(ribs_down_vertices[i])
+        pc_up = o3d.geometry.PointCloud()
+        pc_up.points = o3d.utility.Vector3dVector(ribs_up_vertices[i])
+        mesh = retrieve_vf_from_rib(pc_down,pc_up)
+        # o3d.visualization.draw_geometries([mesh])
+        if i == 0:
+            final_vf = mesh
+            continue
+        final_vf += mesh
         
-    # Set the area threshold
-    area_threshold = 0.0005
-    edge_threshold = 0.025
-
-    # Find the triangles that have an area below the threshold
-    valid_triangles = []
-    for tri in triangles:
-        v1, v2, v3 = vertices[tri]
-        area = triangle_area(v1, v2, v3)
-        if area <= area_threshold:
-            # ensure that edges are smaller than 0.02 meter
-            if (np.linalg.norm(v1-v2) < edge_threshold) and (np.linalg.norm(v2-v3) < edge_threshold) and (np.linalg.norm(v1-v3) < edge_threshold):
-                valid_triangles.append(tri)
+    o3d.visualization.draw_geometries([final_vf])
+    return final_vf
 
 
-    # Create a new mesh with the filtered triangles
-    valid_triangles = np.array(valid_triangles)
-    filtered_mesh = o3d.geometry.TriangleMesh()
-    filtered_mesh.vertices = o3d.utility.Vector3dVector(vertices)
-    filtered_mesh.triangles = o3d.utility.Vector3iVector(valid_triangles)
-    filtered_mesh.remove_duplicated_vertices()     
-    filtered_mesh = o3d.t.geometry.TriangleMesh.from_legacy(filtered_mesh)
-    # filtered_mesh.compute_vertex_normals()
-    # # filtered_mesh.paint_uniform_color([1, 0, 0])
-    triangle_colors = np.ones((len(filtered_mesh.triangle.indices), 3))
-    # triangle_colors[::3] = [1, 0, 0]
-    for i in range(0,len(triangle_colors)):
-        triangle_colors[i] = [1, 0, 0]
-    filtered_mesh.triangle.colors = o3d.core.Tensor(triangle_colors, dtype=o3d.core.float32)
-    filtered_mesh.compute_vertex_normals()
-    # o3d.visualization.draw([filtered_mesh])
-    # filters out nans
-    smpl_points_intersection = [point for point in smpl_points_intersection if not np.isnan(point).any()]
+    # mesh_projected.vertex.positions = o3d.core.Tensor(vertices, dtype=o3d.core.Dtype.Float32)
+    # mesh_projected.triangle.indices = o3d.core.Tensor(faces, dtype=o3d.core.Dtype.Int32)
     
-    pcd.point.positions = o3d.core.Tensor(smpl_points_intersection, dtype=o3d.core.Dtype.Float32)
-    pcd.point.colors = o3d.core.Tensor(np.zeros((len(smpl_points_intersection), 3)), dtype=o3d.core.Dtype.Float32)
-    pcd.point.colors[:, 0] = 1.0
+    # vertices = mesh_projected.vertex.positions.cpu().numpy()
+    # triangles = mesh_projected.triangle.indices.cpu().numpy()
+    # def triangle_area(v1, v2, v3):
+    #     return 0.5 * np.linalg.norm(np.cross(v2 - v1, v3 - v1))
+        
+    # # Set the area threshold
+    # area_threshold = 0.0005
+    # edge_threshold = 0.025
 
-    geometries = [
-    {
-        "name": "humanoid",
-        "geometry": humanoid,
-        "material": mat_skin
-    },
-    {
-        "name": "skel",
-        "geometry": filtered_mesh,
-        # "material": mat_sphere_transparent
-    },
+    # # Find the triangles that have an area below the threshold
+    # valid_triangles = []
+    # for tri in triangles:
+    #     v1, v2, v3 = vertices[tri]
+    #     area = triangle_area(v1, v2, v3)
+    #     if area <= area_threshold:
+    #         # ensure that edges are smaller than 0.02 meter
+    #         if (np.linalg.norm(v1-v2) < edge_threshold) and (np.linalg.norm(v2-v3) < edge_threshold) and (np.linalg.norm(v1-v3) < edge_threshold):
+    #             valid_triangles.append(tri)
+
+
+    # # Create a new mesh with the filtered triangles
+    # valid_triangles = np.array(valid_triangles)
+    # filtered_mesh = o3d.geometry.TriangleMesh()
+    # filtered_mesh.vertices = o3d.utility.Vector3dVector(vertices)
+    # filtered_mesh.triangles = o3d.utility.Vector3iVector(valid_triangles)
+    # filtered_mesh.remove_duplicated_vertices()     
+    # filtered_mesh = o3d.t.geometry.TriangleMesh.from_legacy(filtered_mesh)
+    # # filtered_mesh.compute_vertex_normals()
+    # # # filtered_mesh.paint_uniform_color([1, 0, 0])
+    # triangle_colors = np.ones((len(filtered_mesh.triangle.indices), 3))
+    # # triangle_colors[::3] = [1, 0, 0]
+    # for i in range(0,len(triangle_colors)):
+    #     triangle_colors[i] = [1, 0, 0]
+    # filtered_mesh.triangle.colors = o3d.core.Tensor(triangle_colors, dtype=o3d.core.float32)
+    # filtered_mesh.compute_vertex_normals()
+    # # o3d.visualization.draw([filtered_mesh])
+    # # filters out nans
+    # smpl_points_intersection = [point for point in smpl_points_intersection if not np.isnan(point).any()]
+    
+    # pcd.point.positions = o3d.core.Tensor(smpl_points_intersection, dtype=o3d.core.Dtype.Float32)
+    # pcd.point.colors = o3d.core.Tensor(np.zeros((len(smpl_points_intersection), 3)), dtype=o3d.core.Dtype.Float32)
+    # pcd.point.colors[:, 0] = 1.0
+
+    # geometries = [
     # {
-    #     "name": "pcd",
-    #     "geometry": pcd,
+    #     "name": "humanoid",
+    #     "geometry": humanoid,
+    #     "material": mat_skin
+    # },
+    # {
+    #     "name": "skel",
+    #     "geometry": filtered_mesh,
     #     # "material": mat_sphere_transparent
     # },
-    {
-        "name": "mesh center",
-        "geometry": o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2, origin=skel_center),
-    }
-    ]
+    # # {
+    # #     "name": "pcd",
+    # #     "geometry": pcd,
+    # #     # "material": mat_sphere_transparent
+    # # },
+    # {
+    #     "name": "mesh center",
+    #     "geometry": o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.2, origin=skel_center),
+    # }
+    # ]
 
-    humanoid.compute_vertex_normals()
-    o3d.visualization.draw(geometries)
-    # dump pointcloud to file
-    pcd_legacy = pcd.to_legacy()
-    o3d.io.write_point_cloud("pcd.ply", pcd_legacy, write_ascii=True) 
-    # dump mesh to file
-    print("Filling holes and saving the mesh")
-    filtered_mesh.fill_holes(hole_size=0.02)
-    print("Done")
+    # humanoid.compute_vertex_normals()
+    # o3d.visualization.draw(geometries)
+    # # dump pointcloud to file
+    # pcd_legacy = pcd.to_legacy()
+    # o3d.io.write_point_cloud("pcd.ply", pcd_legacy, write_ascii=True) 
+    # # dump mesh to file
+    # print("Filling holes and saving the mesh")
+    # filtered_mesh.fill_holes(hole_size=0.02)
+    # print("Done")
 
-    return filtered_mesh
+    # return filtered_mesh
 
 def visualize_mesh_normals(mesh):
     mesh.compute_vertex_normals()
