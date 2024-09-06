@@ -44,7 +44,7 @@ def visualize_normals(triangles,normals, length):
 
 if __name__=="__main__":
     # Load the mesh
-    mesh = o3d.io.read_triangle_mesh(os.path.expanduser('~') + '/SKEL_WS/ros2_ws/tube.obj')
+    mesh = o3d.io.read_triangle_mesh(os.path.expanduser('~') + '/SKEL_WS/ros2_ws/final_vf.obj')
     # dataset = o3d.data.KnotMesh()
     # mesh = o3d.io.read_triangle_mesh(dataset.path)
     # mesh.scale(0.002, center=mesh.get_center())

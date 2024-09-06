@@ -4,16 +4,18 @@ import math_utils
 from scipy.interpolate import splev, splprep
 import matplotlib.pyplot as plt
 
-def retrieve_vf_from_rib(rib_down, rib_up):
+def retrieve_vf_from_rib(rib_down, rib_up, skel_center):
     rib_down.remove_duplicated_points()
     rib_up.remove_duplicated_points()
 
     a1 = np.asarray(rib_up.points)
     a2 = np.asarray(rib_down.points)
+
+    line_size = 10
     # Find the range of x values in a1
     min_a1_x, max_a1_x = min(a1[:, 0]), max(a1[:, 0])
     # Create an evenly spaced array that ranges from the minimum to the maximum
-    new_a1_x = np.linspace(min_a1_x, max_a1_x, 100)
+    new_a1_x = np.linspace(min_a1_x, max_a1_x, line_size)
     # Fit a 3rd degree polynomial to your data in the y and z dimensions
     a1_coefs_y = np.polyfit(a1[:, 0], a1[:, 1], 3)
     a1_coefs_z = np.polyfit(a1[:, 0], a1[:, 2], 3)
@@ -23,16 +25,16 @@ def retrieve_vf_from_rib(rib_down, rib_up):
 
     # Repeat for array 2:
     min_a2_x, max_a2_x = min(a2[:, 0]), max(a2[:, 0])
-    new_a2_x = np.linspace(min_a2_x, max_a2_x, 100)
+    new_a2_x = np.linspace(min_a2_x, max_a2_x, line_size)
     a2_coefs_y = np.polyfit(a2[:, 0], a2[:, 1], 3)
     a2_coefs_z = np.polyfit(a2[:, 0], a2[:, 2], 3)
     new_a2_y = np.polyval(a2_coefs_y, new_a2_x)
     new_a2_z = np.polyval(a2_coefs_z, new_a2_x)
 
     # Calculate the midpoint for x, y, and z coordinates
-    midx = [np.mean([new_a1_x[i], new_a2_x[i]]) for i in range(100)]
-    midy = [np.mean([new_a1_y[i], new_a2_y[i]]) for i in range(100)]
-    midz = [np.mean([new_a1_z[i], new_a2_z[i]]) for i in range(100)]
+    midx = [np.mean([new_a1_x[i], new_a2_x[i]]) for i in range(line_size)]
+    midy = [np.mean([new_a1_y[i], new_a2_y[i]]) for i in range(line_size)]
+    midz = [np.mean([new_a1_z[i], new_a2_z[i]]) for i in range(line_size)]
 
     # Create a 3D plot
     # fig = plt.figure()
@@ -63,9 +65,10 @@ def retrieve_vf_from_rib(rib_down, rib_up):
         return np.stack((x, y, z), axis=-1)
 
     # Given control points
+    num_vertical_divisions = 160
     control_points = np.array([midx, midy, midz]).T
     tck, u = splprep(control_points.T, s=0)
-    u_fine = np.linspace(0, 1, 8)
+    u_fine = np.linspace(0, 1, num_vertical_divisions)
     spline_points = np.array(splev(u_fine, tck)).T
 
     # Calculate tangents along the spline
@@ -73,11 +76,12 @@ def retrieve_vf_from_rib(rib_down, rib_up):
     tangents /= np.linalg.norm(tangents, axis=1)[:, np.newaxis]
 
     # x and y axis length
-    a = np.mean(np.linalg.norm(np.array([new_a1_x, new_a1_y, new_a1_z]) - np.array([midx, midy, midz]), axis=0))
-    b = a
-
+    print("distance center-new_a1:", np.mean(np.linalg.norm(np.array([new_a1_x, new_a1_y, new_a1_z]) - np.array([midx, midy, midz]), axis=0)))
+    print("distance center-new_a2:", np.mean(np.linalg.norm(np.array([new_a2_x, new_a2_y, new_a2_z]) - np.array([midx, midy, midz]), axis=0)))
+    a = 1.8 * np.mean(np.linalg.norm(np.array([new_a1_x, new_a1_y, new_a1_z]) - np.array([midx, midy, midz]), axis=0))
+    b = np.mean(np.linalg.norm(np.array([new_a1_x, new_a1_y, new_a1_z]) - np.array([midx, midy, midz]), axis=0))
     # Define the number of points on each ellipse
-    n_ellipse_points = 20
+    n_ellipse_points = 40
 
     # Sweep the ellipse along the spline
     vertices = []
@@ -85,11 +89,15 @@ def retrieve_vf_from_rib(rib_down, rib_up):
 
     for i, (point, tangent) in enumerate(zip(spline_points, tangents)):
         # Compute a perpendicular vector to create the local coordinate system
-        if np.allclose(tangent, [0, 0, 1]):
-            normal = np.array([0, 1, 0])
-        else:
-            normal = np.array([0, 0, 1])
-        
+        # if np.allclose(tangent, [0, 0, 1]):
+        #     normal = np.array([0, 1, 0])
+        # else:
+        #     normal = np.array([0, 0, 1])
+
+        # normal direction is the same as the projection direction
+        normal = skel_center
+        normal[1] = point[1]
+
         binormal = np.cross(tangent, normal)
         binormal /= np.linalg.norm(binormal)
         normal = np.cross(binormal, tangent)

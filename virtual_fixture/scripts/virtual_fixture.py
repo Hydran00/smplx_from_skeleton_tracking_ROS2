@@ -18,10 +18,10 @@ class VirtualFixtureCalculator(Node):
         self.target_frame = "haptic_interface_target"
         self.base_frame = "base_link"
 
-        self.load_path = os.path.expanduser('~')+"/SKEL_WS/SKEL/output/smpl_fit/smpl_fit_skin.obj"
+        self.skin_load_path = os.path.expanduser('~')+"/SKEL_WS/SKEL/output/smpl_fit/smpl_fit_skin.obj"
         self.skin_save_path = os.path.expanduser('~')+"/SKEL_WS/ros2_ws/skin_mesh.obj"
         
-        mesh = o3d.io.read_triangle_mesh(self.load_path)
+        mesh = o3d.io.read_triangle_mesh(self.skin_load_path)
 
         self.output_path = os.path.expanduser('~')+"/SKEL_WS/ros2_ws/final_vf.obj"
         rib_cage = utils.compute_torax_projection(mesh)
@@ -35,16 +35,18 @@ class VirtualFixtureCalculator(Node):
         #     o3d.visualization.draw_geometries([rib_cage_new.to_legacy()])
         #     rib_cage = rib_cage_new.to_legacy()
 
-        # self.transform_mesh(rib_cage)
+        self.transform_mesh(rib_cage)
         self.transform_mesh(mesh)
+        # self.transform_mesh()
         o3d.io.write_triangle_mesh(self.output_path, rib_cage, write_ascii=True)
         o3d.io.write_triangle_mesh(self.skin_save_path, mesh, write_ascii=True)
         self.get_logger().info("Virtual fixture saved to: "+self.output_path)
 
     def transform_mesh(self, mesh):
-        R = mesh.get_rotation_matrix_from_xyz((np.pi,0,0))
-        mesh.rotate(R, center=(0,0,0))
-        mesh.translate((-0.12,0.3,1.6),relative=True)
+        # R = mesh.get_rotation_matrix_from_xyz((np.pi,0,0))
+        # mesh.rotate(R, center=(0,0,0))
+        # mesh.translate((-0.12,0.3,1.6),relative=True)
+        pass
 
         
 def main(args=None):

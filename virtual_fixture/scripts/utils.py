@@ -37,6 +37,13 @@ from materials import mat_sphere_transparent, mat_skin
 from tqdm import tqdm
 from ament_index_python.packages import get_package_share_directory
 from rib_boundary import retrieve_vf_from_rib
+def mirror_normals(mesh):
+    """
+    Mirror the normals of a mesh.
+    """
+    normals = np.asarray(mesh.triangle_normals)
+    mirrored_normals = normals * -1
+    mesh.triangle_normals = o3d.utility.Vector3dVector(mirrored_normals)
 
 def compute_torax_projection(mesh):
     """
@@ -47,8 +54,8 @@ def compute_torax_projection(mesh):
     skel_path =os.path.expanduser('~')+"/SKEL_WS/SKEL/output/smpl_fit/smpl_fit_skel.obj"
     skel_model = o3d.io.read_triangle_mesh(skel_path)
     faces_list_file_path = get_package_share_directory("virtual_fixture")+ '/skel_regions/full_torax.txt'
-    ribs_path_prefix = os.path.expanduser('~')+"/SKEL_WS/ros2_ws/src/smplx_from_skeleton_tracking_ROS2/virtual_fixture/skel_regions/rib_"
-    available_ribs = [(2,'r'),(3,'r'),(3,'l')]
+    ribs_path_prefix = os.path.expanduser('~')+"/SKEL_WS/ros2_ws/src/smplx_from_skeleton_tracking_ROS2/virtual_fixture/skel_regions/rib"
+    available_ribs = [(2,'r'),(3,'r'),(4,'r'),(5,'r'),(6,'r'),(7,'r'),(2,'l'),(3,'l'),(4,'l'),(5,'l'),(6,'l'),(7,'l')]
     
     projection_method = "radial" # "linear" or "radial"
     
@@ -79,12 +86,13 @@ def compute_torax_projection(mesh):
 
     skel_model_new  = o3d.t.geometry.TriangleMesh.from_legacy(skel_model)
     color_faces(skel_model_new, skel_faces, [1.0, 0.0, 0.0])
+    # color_faces(skel_model_new, ribs_down_faces[3], [1.0, 0.0, 0.0])
 
     rib_model_new  = o3d.t.geometry.TriangleMesh.from_legacy(skel_model)
     color_faces(rib_model_new, rib_l_faces, [0.0, 1.0, 0.0])
 
-    o3d.visualization.draw([skel_model_new])
-    o3d.visualization.draw([rib_model_new])
+    # o3d.visualization.draw([skel_model_new])
+    # o3d.visualization.draw([rib_model_new])
 
     scene = o3d.t.geometry.RaycastingScene()
     scene.add_triangles(humanoid)
@@ -128,7 +136,7 @@ def compute_torax_projection(mesh):
     # smpl_faces_intersection.append(ans['primitive_ids'][0].cpu().numpy())
     rays = rays.cpu().numpy()
     
-    mesh_projected = o3d.t.geometry.TriangleMesh()
+    mesh_projected = o3d.geometry.TriangleMesh()
     vertices = np.zeros((len(skel_faces)*3,3))
     faces = np.zeros((len(skel_faces),3))
 
@@ -174,6 +182,9 @@ def compute_torax_projection(mesh):
                     points = np.array([new_point1,new_point2,new_point3])
                     ribs_up_vertices[j].append(points[np.argmin(points[:,1])])
     
+    mesh_projected.vertices = o3d.utility.Vector3dVector(vertices)
+    mesh_projected.triangles = o3d.utility.Vector3iVector(faces)
+
     final_vf = o3d.t.geometry.TriangleMesh()
     for i in range(len(ribs_down_vertices)):
         print("RIB ",i)
@@ -181,19 +192,23 @@ def compute_torax_projection(mesh):
         pc_down.points = o3d.utility.Vector3dVector(ribs_down_vertices[i])
         pc_up = o3d.geometry.PointCloud()
         pc_up.points = o3d.utility.Vector3dVector(ribs_up_vertices[i])
-        mesh = retrieve_vf_from_rib(pc_down,pc_up)
+        mesh = retrieve_vf_from_rib(pc_down,pc_up, skel_center)
         # o3d.visualization.draw_geometries([mesh])
+        mesh.compute_triangle_normals()
+        mesh.orient_triangles()
+        mirror_normals(mesh)
         if i == 0:
             final_vf = mesh
             continue
         final_vf += mesh
-        
-    o3d.visualization.draw_geometries([final_vf])
+    final_vf.paint_uniform_color([1.0, 0.0, 0.0])
+    final_vf_new = o3d.t.geometry.TriangleMesh.from_legacy(final_vf)
+    # o3d.visualization.draw_geometries([final_vf])
+    o3d.visualization.draw([final_vf_new])
+    o3d.visualization.draw_geometries([final_vf, skel_model,humanoid.to_legacy()])
     return final_vf
 
 
-    # mesh_projected.vertex.positions = o3d.core.Tensor(vertices, dtype=o3d.core.Dtype.Float32)
-    # mesh_projected.triangle.indices = o3d.core.Tensor(faces, dtype=o3d.core.Dtype.Int32)
     
     # vertices = mesh_projected.vertex.positions.cpu().numpy()
     # triangles = mesh_projected.triangle.indices.cpu().numpy()
