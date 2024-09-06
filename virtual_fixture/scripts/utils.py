@@ -55,7 +55,7 @@ def compute_torax_projection(mesh):
     skel_model = o3d.io.read_triangle_mesh(skel_path)
     faces_list_file_path = get_package_share_directory("virtual_fixture")+ '/skel_regions/full_torax.txt'
     ribs_path_prefix = os.path.expanduser('~')+"/SKEL_WS/ros2_ws/src/smplx_from_skeleton_tracking_ROS2/virtual_fixture/skel_regions/rib"
-    available_ribs = [(2,'r'),(3,'r'),(4,'r'),(5,'r'),(6,'r'),(7,'r'),(2,'l'),(3,'l'),(4,'l'),(5,'l'),(6,'l'),(7,'l')]
+    available_ribs = [(2,'r')] #,(3,'r'),(4,'r'),(5,'r'),(6,'r'),(7,'r'),(2,'l'),(3,'l'),(4,'l'),(5,'l'),(6,'l'),(7,'l')]
     
     projection_method = "radial" # "linear" or "radial"
     
@@ -65,70 +65,110 @@ def compute_torax_projection(mesh):
     ribs_down_faces = []
     # list of faces for the upper line of the available ribs
     ribs_up_faces = []
+    # consider the top and bottom vertices of each face on Y axis
+    ribs_vertices_up = [ [] for i in range(len(available_ribs))]
+    ribs_vertices_bottom = [ [] for i in range(len(available_ribs))]
+    
+    skel_vertices_pos = np.asarray(skel_model.vertices) 
+    
     with open(faces_list_file_path, 'r') as file:
         lines = file.readlines()
         # lines are in the format a b c d e and I want e
         skel_faces = [int(line.split()[4]) for line in lines]
-    for rib in available_ribs:
+    for i, rib in enumerate(available_ribs):
         path_down = ribs_path_prefix+str(rib[0])+"_"+rib[1]+"_down.txt"
         with open(path_down, 'r') as file:
             lines = file.readlines()
             # lines are in the format a b c d e and I want e
             ribs_down_faces.append([int(line.split()[4]) for line in lines])
+            for line in lines:
+                b_idx = int(line.split()[1])
+                c_idx = int(line.split()[2])
+                d_idx = int(line.split()[3])
+                b = skel_vertices_pos[b_idx]
+                c = skel_vertices_pos[c_idx]
+                d = skel_vertices_pos[d_idx]
+                max_y_idx = 0 #np.argmin([b[1],c[1],d[1]])
+                ribs_vertices_bottom[i].append([b_idx,c_idx,d_idx][max_y_idx])
+        
         path_up = ribs_path_prefix+str(rib[0])+"_"+rib[1]+"_up.txt"
         with open(path_up, 'r') as file:
             lines = file.readlines()
             # lines are in the format a b c d e and I want e
             ribs_up_faces.append([int(line.split()[4]) for line in lines])
-        
+            for line in lines:
+                b_idx = int(line.split()[1])
+                c_idx = int(line.split()[2])
+                d_idx = int(line.split()[3])
+                b = skel_vertices_pos[b_idx]
+                c = skel_vertices_pos[c_idx]
+                d = skel_vertices_pos[d_idx]
+                max_y_idx = 0# np.argmax([b[1],c[1],d[1]])
+                ribs_vertices_up[i].append([b_idx,c_idx,d_idx][max_y_idx])
+    
+    
+    # remove duplicates
+    for i in range(len(ribs_vertices_bottom)):
+        ribs_vertices_bottom[i] = list(set(ribs_vertices_bottom[i]))
+        ribs_vertices_up[i] = list(set(ribs_vertices_up[i]))
+    
+    print("Ribs down vertices: ",ribs_vertices_bottom)
+    print("Ribs up vertices: ",ribs_vertices_up)
     
     skel_center_vertex_id = 25736
 
     skel_model_new  = o3d.t.geometry.TriangleMesh.from_legacy(skel_model)
-    color_faces(skel_model_new, skel_faces, [1.0, 0.0, 0.0])
-    # color_faces(skel_model_new, ribs_down_faces[3], [1.0, 0.0, 0.0])
+    # color_faces(skel_model_new, skel_faces, [1.0, 0.0, 0.0])
+    # color_faces(skel_model_new, ribs_up_faces[10], [1.0, 0.0, 0.0])
 
-    rib_model_new  = o3d.t.geometry.TriangleMesh.from_legacy(skel_model)
-    color_faces(rib_model_new, rib_l_faces, [0.0, 1.0, 0.0])
+    # rib_model_new  = o3d.t.geometry.TriangleMesh.from_legacy(skel_model)
+    # color_faces(rib_model_new, rib_l_faces, [0.0, 1.0, 0.0])
 
-    # o3d.visualization.draw([skel_model_new])
+    # skel_model_new.compute_vertex_normals()
+    
+    # reference_frame = o3d.t.geometry.TriangleMesh.create_coordinate_frame(size=0.2, origin=[0,0,0])
+    
+    # o3d.visualization.draw([skel_model_new,reference_frame])
     # o3d.visualization.draw([rib_model_new])
 
     scene = o3d.t.geometry.RaycastingScene()
     scene.add_triangles(humanoid)
     
-
-    skel_face_vertices_idx = np.asarray(skel_model.triangles)[skel_faces]
-    skel_vertex_positions = np.asarray(skel_model.vertices)
+    # rib cage faces and vertices
+    # skel_face_vertices_idx = np.asarray(skel_model.triangles)[skel_faces]
     
     # compute the mean of every vertex in the skel faces
-    skel_center = np.mean([skel_vertex_positions[skel_face].mean(axis=0) for skel_face in skel_face_vertices_idx],axis=0)
-    skel_center = skel_vertex_positions[skel_center_vertex_id]
+    # skel_center = np.mean([skel_vertex_positions[skel_face].mean(axis=0) for skel_face in skel_face_vertices_idx],axis=0)
+    skel_center = skel_vertices_pos[skel_center_vertex_id]
     
     # compute skel center taking the avg betweem min and max x and z
     print("Skel center is ",skel_center)
-    smpl_faces_intersection = []
-    smpl_points_intersection = []
-    
-    pcd = o3d.t.geometry.PointCloud()
 
     rays = []
     print("Preparing data for raycasting")
-    for i, skel_face in enumerate(tqdm(skel_faces)):
+    
+    for rib_idx in tqdm(range(len(ribs_vertices_bottom))):
+        for i, vertex_idx in enumerate(ribs_vertices_bottom[rib_idx]):
+            vertex = skel_vertices_pos[vertex_idx]
 
-        skel_face_vertices = []
-        skel_face_vertices.append(skel_vertex_positions[skel_face_vertices_idx[i][0]])
-        skel_face_vertices.append(skel_vertex_positions[skel_face_vertices_idx[i][1]])
-        skel_face_vertices.append(skel_vertex_positions[skel_face_vertices_idx[i][2]])
-
-        for j in range(3):
             direction_start = skel_center
-            direction_start[1] = skel_face_vertices[j][1]
-            direction_end = skel_face_vertices[j]
+            direction_start[1] = vertex[1]
+            direction_end = vertex
             direction = direction_end - direction_start
-            rays.append([*skel_face_vertices[j],*direction])
-    
-    
+            direction = direction / np.linalg.norm(direction)
+            rays.append([*vertex,*direction])
+
+        for i, vertex_idx in enumerate(ribs_vertices_up[rib_idx]):
+
+            vertex = skel_vertices_pos[vertex_idx]
+
+            direction_start = skel_center
+            direction_start[1] = vertex[1]
+            direction_end = vertex
+            direction = direction_end - direction_start
+            direction = direction / np.linalg.norm(direction)
+            rays.append([*vertex,*direction])
+
     rays = o3d.core.Tensor(rays, dtype=o3d.core.Dtype.Float32)
     
     ans = scene.cast_rays(rays)
@@ -136,62 +176,49 @@ def compute_torax_projection(mesh):
     # smpl_faces_intersection.append(ans['primitive_ids'][0].cpu().numpy())
     rays = rays.cpu().numpy()
     
-    mesh_projected = o3d.geometry.TriangleMesh()
-    vertices = np.zeros((len(skel_faces)*3,3))
-    faces = np.zeros((len(skel_faces),3))
-
-    ribs_down_vertices = [[] for i in range(len(ribs_down_faces))]
-    ribs_up_vertices = [[] for i in range(len(ribs_up_faces))]
+    ribs_vertices_up_projected = [[] for i in range(len(ribs_vertices_up))]
+    ribs_vertices_down_projected = [[] for i in range(len(ribs_vertices_bottom))]
 
     print("RIB l cage: ",rib_l_faces)
-    for i, skel_face in enumerate(tqdm(skel_faces)):
-        skel_face_vertices = []
-        skel_face_vertices.append(skel_vertex_positions[skel_face_vertices_idx[i][0]])
-        skel_face_vertices.append(skel_vertex_positions[skel_face_vertices_idx[i][1]])
-        skel_face_vertices.append(skel_vertex_positions[skel_face_vertices_idx[i][2]])
-
-        z_distance1 = distances[i*3]
-        z_distance2 = distances[i*3+1]
-        z_distance3 = distances[i*3+2]
-        direction1 = rays[i*3][3:]
-        direction2 = rays[i*3+1][3:]
-        direction3 = rays[i*3+2][3:]
-        
-        if z_distance1 != np.inf and z_distance2 != np.inf and z_distance3 != np.inf:
-            new_point1 = skel_face_vertices[0] + z_distance1 * direction1
-            new_point2 = skel_face_vertices[1] + z_distance2 * direction2
-            new_point3 = skel_face_vertices[2] + z_distance3 * direction3
-            smpl_points_intersection.append(new_point1)
-            smpl_points_intersection.append(new_point2)
-            smpl_points_intersection.append(new_point3)
-            vertices[i*3][:] = new_point1
-            vertices[i*3+1][:] = new_point2
-            vertices[i*3+2][:] = new_point3
-            faces[i] = [i*3,i*3+1,i*3+2]
-            
-            # iter available down ribs
-            for j,rib_down in enumerate(ribs_down_faces):
-                if skel_face in rib_down:
-                    # take just the vertices with highest y
-                    points = np.array([new_point1,new_point2,new_point3])
-                    ribs_down_vertices[j].append(points[np.argmax(points[:,1])])
-            # iter available up ribs
-            for j,rib_up in enumerate(ribs_up_faces):
-                if skel_face in rib_up:
-                    # take just the vertices with lowest y
-                    points = np.array([new_point1,new_point2,new_point3])
-                    ribs_up_vertices[j].append(points[np.argmin(points[:,1])])
+    ray_idx = 0
+    sphere_list = []
+    for rib_idx in range(len(ribs_vertices_bottom)):
+        for vertex_idx in ribs_vertices_bottom[rib_idx]:
+            vertex_bottom = rays[ray_idx][:3]
+            direction_bottom = rays[ray_idx][3:]
+            distance_bottom = distances[ray_idx]
+            ray_idx += 1
+            if distance_bottom != np.inf :
+                projected_vertex = vertex_bottom + distance_bottom * direction_bottom
+                ribs_vertices_down_projected[rib_idx].append(projected_vertex)
+                sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.01)
+                sphere.translate(projected_vertex)
+                sphere.paint_uniform_color([0.0, 1.0, 0.0])
+                sphere_list.append(sphere)
+        for vertex_idx in ribs_vertices_up[rib_idx]:
+            vertex_up = rays[ray_idx][:3]
+            direction_up = rays[ray_idx][3:]
+            distance_up = distances[ray_idx]
+            ray_idx += 1
+            if distance_up != np.inf :
+                projected_vertex = vertex_up + distance_up * direction_up
+                ribs_vertices_up_projected[rib_idx].append(projected_vertex)
+                sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.01)
+                sphere.translate(projected_vertex)
+                sphere.paint_uniform_color([1.0, 0.0, 0.0])
+                sphere_list.append(sphere)
     
-    mesh_projected.vertices = o3d.utility.Vector3dVector(vertices)
-    mesh_projected.triangles = o3d.utility.Vector3iVector(faces)
-
+    o3d.visualization.draw_geometries(sphere_list + [humanoid.to_legacy()])
+    print("Ray idx: ",ray_idx, " vs ",len(rays))
     final_vf = o3d.t.geometry.TriangleMesh()
-    for i in range(len(ribs_down_vertices)):
+    for rib_idx in range(len(ribs_vertices_bottom)):
         print("RIB ",i)
         pc_down = o3d.geometry.PointCloud()
-        pc_down.points = o3d.utility.Vector3dVector(ribs_down_vertices[i])
+        print("down Adding: ",np.array(ribs_vertices_down_projected[rib_idx]))
+        pc_down.points = o3d.utility.Vector3dVector(np.array(ribs_vertices_down_projected[rib_idx]))
         pc_up = o3d.geometry.PointCloud()
-        pc_up.points = o3d.utility.Vector3dVector(ribs_up_vertices[i])
+        print("up Adding: ",np.array(ribs_vertices_up_projected[rib_idx]))
+        pc_up.points = o3d.utility.Vector3dVector(np.array(ribs_vertices_up_projected[rib_idx]))
         mesh = retrieve_vf_from_rib(pc_down,pc_up, skel_center)
         # o3d.visualization.draw_geometries([mesh])
         mesh.compute_triangle_normals()
@@ -312,93 +339,3 @@ def visualize_mesh_normals(mesh):
     line_set.colors = o3d.utility.Vector3dVector(colors)
     return line_set
     
-def get_protocol_areas_center(mesh):
-    """
-    Get the centers of the areas of interest in the mesh for the lung US protocol.
-    """
-    face_centers=[]
-    # Create spheres at face centers
-    for i, face in enumerate(LUNG_US_SMPL_FACES.values()):
-        # Get the coordinates of the vertices of the face
-        vertices_ids = mesh.triangles[face]
-        vertex_coords = np.asarray(mesh.vertices)[vertices_ids]
-        # Compute the center of the face
-        face_center = vertex_coords.mean(axis=0)
-        face_centers.append(face_center)
-        # Create and color spheres
-    return face_centers
-
-def create_spherical_areas(centers, radius=0.05, color=[1, 0, 0]):
-    """
-    Given the XYZ areas center, create spheres at those locations.
-    """
-    centers = np.asarray(centers)
-    # centers[:,2] += 0.1
-    sphere_dict = {}
-    for i, face in enumerate(LUNG_US_SMPL_FACES.values()):
-        sphere = o3d.geometry.TriangleMesh.create_sphere(radius=radius)
-        # Normals are need for the shader to work
-        sphere.compute_vertex_normals()
-        sphere.translate(centers[i], relative=False)
-        sphere.paint_uniform_color(color)
-        sphere_dict[list(LUNG_US_SMPL_FACES.keys())[i]] = sphere
-    return sphere_dict
-
-from visualization_msgs.msg import Marker
-
-def clear_meshes(publisher):
-    """
-    Clear all meshes from the Rviz visualization.
-    """
-    marker = Marker()
-    marker.action = marker.DELETEALL
-    publisher.publish(marker)
-
-def publish_mesh(publisher,path, id, rgba=[1.0, 0.0, 0.0, 0.6]):
-    """
-    Publish a mesh to the Rviz visualization.
-    """
-    marker = Marker()
-    # clear marker with id 0
-    marker.id = id
-    marker.type = marker.MESH_RESOURCE
-    marker.header.frame_id = "base_link"
-    marker.action = marker.ADD
-    marker.mesh_resource = "file://"+path
-    marker.mesh_use_embedded_materials = True  # Need this to use textures for mesh
-    marker.scale.x = 1.0
-    marker.scale.y = 1.0
-    marker.scale.z = 1.0
-    marker.pose.orientation.w = 1.0
-    marker.color.r = rgba[0]
-    marker.color.g = rgba[1]
-    marker.color.b = rgba[2]
-    marker.color.a = rgba[3]
-    print("Publishing mesh with a : ",marker.color.a, " and path ", marker.mesh_resource)
-    publisher.publish(marker)
-    
-def get_flat_surface_point_cloud(points_num,spacing=0.1):
-    # Parameters
-    num_points_per_side = int(np.sqrt(points_num))  # Assuming a square grid
-    side_length = spacing * (num_points_per_side - 1)
-
-    # Generate the points on the XY plane with Z = 0
-    x = np.linspace(0, side_length, num_points_per_side)
-    y = np.linspace(0, side_length, num_points_per_side)
-    xx, yy = np.meshgrid(x, y)
-    zz = np.zeros_like(xx)  # Flat surface, Z = 0
-
-    # Combine into a single array of points
-    points = np.vstack((xx.ravel(), yy.ravel(), zz.ravel())).T
-
-    # Create a PointCloud object
-    point_cloud = o3d.geometry.PointCloud()
-
-    # Assign the points to the point cloud
-    point_cloud.points = o3d.utility.Vector3dVector(points)
-
-    # Optionally, assign colors to the points (e.g., all points white)
-    colors = np.ones_like(points)  # White color
-    point_cloud.colors = o3d.utility.Vector3dVector(colors)
-    
-    return point_cloud

@@ -37,23 +37,24 @@ def retrieve_vf_from_rib(rib_down, rib_up, skel_center):
     midz = [np.mean([new_a1_z[i], new_a2_z[i]]) for i in range(line_size)]
 
     # Create a 3D plot
-    # fig = plt.figure()
-    # ax = fig.add_subplot(111, projection='3d')
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
 
-    # # Scatter plot for the original points
-    # ax.scatter(a1[:, 0], a1[:, 1], a1[:, 2], c='red')
-    # ax.scatter(a2[:, 0], a2[:, 1], a2[:, 2], c='green')
+    # Scatter plot for the original points
+    ax.scatter(a1[:, 0], a1[:, 1], a1[:, 2], c='red')
+    ax.scatter(a2[:, 0], a2[:, 1], a2[:, 2], c='green')
 
-    # # Plot the midpoints line
-    # ax.plot(midx, midy, midz, '--', c='blue')
+    # Plot the midpoints line
+    ax.plot(midx, midy, midz, '--', c='blue')
 
-    # # Set labels for axes
-    # ax.set_xlabel('X')
-    # ax.set_ylabel('Y')
-    # ax.set_zlabel('Z')
+    # Set labels for axes
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+    # Set axis equal
+    ax.axis('equal')
 
-    # plt.show()
-    # visualize
+    plt.show()
 
     # Step 1: Define the spline with the middle line
 # Function to define an ellipse
@@ -148,6 +149,7 @@ def retrieve_vf_from_rib(rib_down, rib_up, skel_center):
     mesh.vertices = o3d.utility.Vector3dVector(vertices)
     mesh.triangles = o3d.utility.Vector3iVector(faces)
     mesh.compute_vertex_normals()
+    # o3d.visualization.draw_geometries([mesh])
     return mesh
 
 
