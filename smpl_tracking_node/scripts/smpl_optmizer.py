@@ -29,19 +29,20 @@ class SMPLModelOptimizer:
     def get_mask_upper_body(self):
         mask = torch.ones((1,72), device='cuda:0')
         # mask neck
-        mask[0, 12*3:12*3+3] = 0
-        # # mask head
-        mask[0, 13*3:13*3+3] = 0
-        mask[0, 15*3:15*3+3] = 0
+        mask[0, 11*3:12*3+3] = 0
+        mask[0, 14*3:15*3+3] = 0
+        # # mask shoulder
+        mask[0, 15*3:13*3+3] = 0
+        mask[0, 16*3:13*3+3] = 0
         # mask legs [4,5,7,8,10,11]
-        mask[0, 1*3:1*3+3] = 0
-        mask[0, 2*3:2*3+3] = 0
-        mask[0, 4*3:4*3+3] = 0
-        mask[0, 5*3:5*3+3] = 0
-        mask[0, 7*3:7*3+3] = 0
-        mask[0, 8*3:8*3+3] = 0
-        mask[0, 10*3:10*3+3] = 0
-        mask[0, 11*3:11*3+3] = 0
+        # mask[0, 1*3:1*3+3] = 0
+        # mask[0, 2*3:2*3+3] = 0
+        # mask[0, 4*3:4*3+3] = 0
+        # mask[0, 5*3:5*3+3] = 0
+        # mask[0, 7*3:7*3+3] = 0
+        # mask[0, 8*3:8*3+3] = 0
+        # mask[0, 10*3:10*3+3] = 0
+        # mask[0, 11*3:11*3+3] = 0
         return mask
 
     def get_mask_torax(self):
@@ -89,7 +90,7 @@ class SMPLModelOptimizer:
         # viz.update_renderer()
         # block(viz)        
              
-        self.optimize(logger, params=[self.global_position], loss_type='transl', num_iterations=100)
+        # self.optimize(logger, params=[self.global_position], loss_type='transl', num_iterations=100)
 
         # block(viz)
         
@@ -106,10 +107,18 @@ class SMPLModelOptimizer:
         # translate the body to the surface
 
         # # optimize arms and legs again
-        self.optimize(logger, params=[self.body_pose,self.betas], lr=0.001, loss_type='pose', num_iterations=1000)
+        self.optimize(logger, params=[self.body_pose], lr=0.001, loss_type='pose', num_iterations=500)
+        self.optimize(logger, params=[self.betas], lr=0.001, loss_type='pose', num_iterations=200)
 
         # self.optimize(logger, params=[self.betas], lr=0.01, loss_type='shape', num_iterations=200)
         
+        # output = self.get_smpl()
+        # mesh = o3d.geometry.TriangleMesh()
+        # mesh.vertices = o3d.utility.Vector3dVector(output.vertices[0].cpu().detach().numpy())
+        # mesh.triangles = o3d.utility.Vector3iVector(self.smpl_model.faces)
+        # viz.add_geometry(mesh)
+        # viz.poll_events()
+        # block(viz)
         # remove gradient tracking
         self.global_position = self.global_position.detach()
         self.global_orient = self.global_orient.detach()
@@ -240,8 +249,8 @@ class SMPLModelOptimizer:
                     
                     random_color = np.random.rand(3)
                     
-                    sphere.paint_uniform_color(random_color)
-                    sphere_target.paint_uniform_color(random_color)
+                    sphere.paint_uniform_color([1,0,0])
+                    sphere_target.paint_uniform_color([0,1,0])
                     
                     position = landmarks[j].cpu().detach().numpy()
                     position_target = self.target_landmarks[0, j*3:j*3+3].cpu().detach().numpy()

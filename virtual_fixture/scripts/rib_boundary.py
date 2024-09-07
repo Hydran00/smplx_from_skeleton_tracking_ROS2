@@ -4,7 +4,7 @@ import math_utils
 from scipy.interpolate import splev, splprep
 import matplotlib.pyplot as plt
 
-def retrieve_vf_from_rib(rib_down, rib_up, skel_center):
+def retrieve_vf_from_rib(rib_down, rib_up, skel_center, transf_matrix):
     rib_down.remove_duplicated_points()
     rib_up.remove_duplicated_points()
 
@@ -37,22 +37,22 @@ def retrieve_vf_from_rib(rib_down, rib_up, skel_center):
     midz = [np.mean([new_a1_z[i], new_a2_z[i]]) for i in range(line_size)]
 
     # Create a 3D plot
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
+    # fig = plt.figure()
+    # ax = fig.add_subplot(111, projection='3d')
 
-    # Scatter plot for the original points
-    ax.scatter(a1[:, 0], a1[:, 1], a1[:, 2], c='red')
-    ax.scatter(a2[:, 0], a2[:, 1], a2[:, 2], c='green')
+    # # Scatter plot for the original points
+    # ax.scatter(a1[:, 0], a1[:, 1], a1[:, 2], c='red')
+    # ax.scatter(a2[:, 0], a2[:, 1], a2[:, 2], c='green')
 
-    # Plot the midpoints line
-    ax.plot(midx, midy, midz, '--', c='blue')
+    # # Plot the midpoints line
+    # ax.plot(midx, midy, midz, '--', c='blue')
 
-    # Set labels for axes
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
+    # # Set labels for axes
+    # ax.set_xlabel('X')
+    # ax.set_ylabel('Y')
+    # ax.set_zlabel('Z')
     # Set axis equal
-    ax.axis('equal')
+    # ax.axis('equal')
 
     plt.show()
 
@@ -79,8 +79,8 @@ def retrieve_vf_from_rib(rib_down, rib_up, skel_center):
     # x and y axis length
     print("distance center-new_a1:", np.mean(np.linalg.norm(np.array([new_a1_x, new_a1_y, new_a1_z]) - np.array([midx, midy, midz]), axis=0)))
     print("distance center-new_a2:", np.mean(np.linalg.norm(np.array([new_a2_x, new_a2_y, new_a2_z]) - np.array([midx, midy, midz]), axis=0)))
-    a = 1.8 * np.mean(np.linalg.norm(np.array([new_a1_x, new_a1_y, new_a1_z]) - np.array([midx, midy, midz]), axis=0))
-    b = np.mean(np.linalg.norm(np.array([new_a1_x, new_a1_y, new_a1_z]) - np.array([midx, midy, midz]), axis=0))
+    b = 2.6 * np.mean(np.linalg.norm(np.array([new_a1_x, new_a1_y, new_a1_z]) - np.array([midx, midy, midz]), axis=0))
+    a = np.mean(np.linalg.norm(np.array([new_a1_x, new_a1_y, new_a1_z]) - np.array([midx, midy, midz]), axis=0))
     # Define the number of points on each ellipse
     n_ellipse_points = 40
 
@@ -97,7 +97,12 @@ def retrieve_vf_from_rib(rib_down, rib_up, skel_center):
 
         # normal direction is the same as the projection direction
         normal = skel_center
-        normal[1] = point[1]
+        normal_in_mesh_ref = np.linalg.inv(transf_matrix) @ np.array([*normal,1])
+        point_in_mesh_ref = np.linalg.inv(transf_matrix) @ np.array([*point,1])
+        y_offset_in_mesh_ref_frame = point_in_mesh_ref[1] - normal_in_mesh_ref[1]
+        # transform the offset to the skel frame
+        y_offset = transf_matrix @ np.array([0,y_offset_in_mesh_ref_frame,0,1])
+        normal[1] = point[1] + y_offset[1]
 
         binormal = np.cross(tangent, normal)
         binormal /= np.linalg.norm(binormal)
