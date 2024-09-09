@@ -8,6 +8,11 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Vector3, Quaternion
 from body_msgs.msg import Keypoint, BodyData  # Assume these are defined as per the custom message definitions
+import pyquaternion
+import numpy as np 
+import scipy.spatial.transform
+
+ROT_90_DEG_X = scipy.spatial.transform.Rotation.from_euler('x', 90, degrees=True).as_matrix()
 
 class ParseBodyJson(Node):
     def __init__(self, port=20000, multicast_ip_address="230.0.0.1", use_multicast=True, buffer_size=65536):
@@ -72,10 +77,10 @@ class ParseBodyJson(Node):
 
             # Fill BodyData message
             body_msg.global_position = self.vector3_from_dict(body['position'])
-            body_msg.global_root_orientation = self.quaternion_from_dict(body['global_root_orientation'])
+            body_msg.global_root_orientation = self.quaternion1_from_dict(body['global_root_orientation'])
 
             body_msg.local_position_per_joint = [self.vector3_from_dict(pos) for pos in body['local_position_per_joint']]
-            body_msg.local_orientation_per_joint = [self.quaternion_from_dict(orient) for orient in body['local_orientation_per_joint']]
+            body_msg.local_orientation_per_joint = [self.quaternion2_from_dict(orient) for orient in body['local_orientation_per_joint']]
 
             for kp in body['keypoint']:
                 keypoint_msg = Keypoint()
@@ -87,19 +92,64 @@ class ParseBodyJson(Node):
 
     @staticmethod
     def vector3_from_dict(data):
-        vector = Vector3()
-        vector.x = data['x']
-        vector.y = data['y']
-        vector.z = data['z']
-        return vector
+        vector = np.array([data['x'], data['y'], data['z']])
+        # convert to Y-up coordinate system
+        vector3 = Vector3()
+        # -y,z,x
+        vector3.x = vector[1]
+        vector3.y = vector[2]
+        vector3.z = vector[0]
+        return vector3
 
     @staticmethod
-    def quaternion_from_dict(data):
+    def quaternion1_from_dict(data):
+        # convert quaternion to SMPL coordinate system
+        quat = np.array([data['x'], data['y'], data['z'], data['w']])
+        if(np.linalg.norm([data['x'], data['y'], data['z'], data['w']]) == 0):
+            return Quaternion()
+        rot_mat = scipy.spatial.transform.Rotation.from_quat([data['x'], data['y'], data['z'], data['w']]).as_matrix()
+        # rotate the matrix by 90 degrees around x
+        # rot_mat = np.dot(ROT_90_DEG_X, rot_mat)
+        euler = scipy.spatial.transform.Rotation.from_matrix(rot_mat).as_euler('xyz', degrees=True)
+        # flip x with z
+        # tmp = euler[0]
+        # euler[0] = euler[2]
+        # euler[2] = tmp
+        # quat = scipy.spatial.transform.Rotation.from_euler('xyz', euler, degrees=True).as_quat()
+        euler_cpy = euler.copy()
+        euler_cpy[0] = euler[1]
+        euler_cpy[1] = euler[2]
+        euler_cpy[2] = euler[0]
+        quat = scipy.spatial.transform.Rotation.from_euler('xyz', euler_cpy, degrees=True).as_quat()
+
         quaternion = Quaternion()
-        quaternion.x = data['x']
-        quaternion.y = data['y']
-        quaternion.z = data['z']
-        quaternion.w = data['w']
+        quaternion.x = quat[0]
+        quaternion.y = quat[1]
+        quaternion.z = quat[2]
+        quaternion.w = quat[3]
+        
+        return quaternion
+    @staticmethod
+    def quaternion2_from_dict(data):
+        # convert quaternion to SMPL coordinate system
+        quat = np.array([data['x'], data['y'], data['z'], data['w']])
+
+        if(np.linalg.norm([data['x'], data['y'], data['z'], data['w']]) == 0):
+            return Quaternion()
+        euler = scipy.spatial.transform.Rotation.from_quat([data['x'], data['y'], data['z'], data['w']]).as_euler('xyz', degrees=True)
+        euler_cpy = euler.copy()    
+        euler[0] = 0.0
+        euler[1] = 0.0
+        
+        euler[2] = -euler_cpy[0]
+        euler[0] = euler_cpy[2]
+        quat = scipy.spatial.transform.Rotation.from_euler('xyz', euler, degrees=True).as_quat()
+        quaternion = Quaternion()
+        quaternion.x = quat[0]
+        quaternion.y = quat[1]
+        quaternion.z = quat[2]
+        quaternion.w = quat[3]
+        
         return quaternion
 
     def on_destroy(self):

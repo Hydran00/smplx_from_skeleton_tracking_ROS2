@@ -117,8 +117,10 @@ class SMPLTracking(Node):
             self.params_optimizer = SMPLModelOptimizer(self.model, learning_rate=0.1, num_betas=NUM_BETAS)
         self.betas_optimized = False
         
-        # self.reference_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
-        # self.viz.add_geometry(self.reference_frame)
+        self.reference_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
+        self.reference_frame2 = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
+        self.viz.add_geometry(self.reference_frame)
+        self.viz.add_geometry(self.reference_frame2)
         self.spheres = []
         self.spheres_smpl = []
         self.it=0
@@ -347,12 +349,35 @@ class SMPLTracking(Node):
                 self.viz.poll_events()
                 self.viz.update_renderer()
                 time.sleep(0.03)
-            
+        
+        # # Create the transformation matrix as identity
+        transf_matrix = np.eye(4)
+
+        # Get the absolute rotation and position
+        rot = self.mesh.get_rotation_matrix_from_xyz((0, 0, 0))
+        pos = self.mesh.get_center()
+
+        # Set the rotation part of the matrix
+        transf_matrix[:3, :3] = scipy.spatial.transform.Rotation.from_rotvec(self.global_orient[0].cpu().detach().numpy()).as_matrix()
+
+        # Set the translation part of the matrix
+        transf_matrix[:3, 3] = self.global_position[0].cpu().detach().numpy()
+
+        # Reset the reference_frame2 transformation before applying the new one
+
+        # Apply the absolute transformation
+        self.reference_frame2.transform(transf_matrix)
+
+        self.viz.update_geometry(self.reference_frame2)
 
         self.viz.poll_events()
         self.viz.update_renderer()
         self.it=0
+        # while True:
 
+        #     self.viz.poll_events()
+        #     self.viz.update_renderer()
+        #     time.sleep(0.03)
         
         
             

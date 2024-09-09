@@ -22,11 +22,11 @@ def generate_launch_description():
             "mirror":True,
             "model_type":"smpl", # smpl or smplx
             "model_path": expanduser("~")+ '/SKEL_WS/SKEL/models/smpl/SMPL_MALE.pkl',
-            "optimize_model": True,
+            "optimize_model": False,
         }
         ]
     )
     
-    # ld.add_action(parser) # uncomment if you are not using bag file
+    ld.add_action(parser) # uncomment if you are not using bag file
     ld.add_action(tracking_node)
     return ld
