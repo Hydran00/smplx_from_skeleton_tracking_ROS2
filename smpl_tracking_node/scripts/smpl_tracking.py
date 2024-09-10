@@ -4,6 +4,9 @@ from rclpy.node import Node
 import numpy as np
 from body_msgs.msg import BodyData
 from sensor_msgs.msg import PointCloud2
+import tf2_ros
+from tf2_ros import Buffer, TransformListener
+import pickle
 import scipy
 import torch
 import torch.utils.dlpack
@@ -46,7 +49,11 @@ class SMPLTracking(Node):
         # Subscriber for body tracking data
         self.create_subscription(BodyData, 'body_tracking_data', self.callback_bd, 1)
         self.create_subscription(PointCloud2, 'point_cloud', self.callback_pc, 1)
-
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+        self.transform_path = os.path.expanduser('~')+"/SKEL_WS/ros2_ws/transform.pkl"
+        self.camera_frame_name = "zed2_left_camera_frame"
+        self.base_frame = "base_link"
         
         # PARAMS
         self.declare_parameter('model_path', '../smpl/SMPL_MALE.pkl')
@@ -137,7 +144,36 @@ class SMPLTracking(Node):
         self.mesh.vertices = o3d.utility.Vector3dVector(vertices)
         self.mesh.triangles = o3d.utility.Vector3iVector(faces)
         o3d.io.write_triangle_mesh("Tpose.ply", self.mesh)
+    
+    def dump_transform(self):
+        try:
+            # Wait for the transform between 'base_link' and 'odom' for up to 5 seconds
+            while(not self.tf_buffer.can_transform(self.base_frame, self.camera_frame_name, rclpy.time.Time(), timeout=rclpy.duration.Duration(seconds=1.0))):
+                self.get_logger().info("Waiting for transform")
+                rclpy.spin_once(self)
+            self.get_logger().info("Transform found")
+            # Lookup the transform after the waiting period
+        except tf2_ros.TransformException as e:
+            self.get_logger().error(f"TransformException: {e}")
         
+        trans = self.tf_buffer.lookup_transform(self.base_frame, self.camera_frame_name, rclpy.time.Time())
+        # Access transform details
+        self.get_logger().info(f'Translation: {trans.transform.translation}')
+        self.get_logger().info(f'Rotation: {trans.transform.rotation}')
+        
+        trans_matrix = np.eye(4)
+        trans_matrix[:3, 3] = [trans.transform.translation.x,trans.transform.translation.y,trans.transform.translation.z]
+        quat = [trans.transform.rotation.x, trans.transform.rotation.y, trans.transform.rotation.z, trans.transform.rotation.w]
+        rot_matrix = scipy.spatial.transform.Rotation.from_quat(quat).as_matrix()
+        trans_matrix[:3, :3] = rot_matrix
+        with open(self.transform_path, 'wb') as f:
+            # dump information to that file
+            self.get_logger().info("Dumping transform: \n" + str(trans_matrix))
+            pickle.dump(trans_matrix, f)
+
+
+        
+    
     @staticmethod
     def quaternion_to_rotvec(quat):
         def wrap_angle(angle):
@@ -338,6 +374,7 @@ class SMPLTracking(Node):
         # GET SKEL MODEL
         if self.betas_optimized:
             self.viz.remove_geometry(self.mesh)
+            self.dump_transform()
             self.get_skel_model()
             self.viz.remove_geometry(self.mesh) 
             while rclpy.ok():

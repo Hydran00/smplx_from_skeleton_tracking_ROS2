@@ -51,10 +51,10 @@ def retrieve_vf_from_rib(rib_down, rib_up, skel_center, transf_matrix):
     # ax.set_xlabel('X')
     # ax.set_ylabel('Y')
     # ax.set_zlabel('Z')
-    # Set axis equal
-    # ax.axis('equal')
+    # # Set axis equal
+    # # ax.axis('equal')
 
-    plt.show()
+    # plt.show()
 
     # Step 1: Define the spline with the middle line
 # Function to define an ellipse
@@ -66,7 +66,7 @@ def retrieve_vf_from_rib(rib_down, rib_up, skel_center, transf_matrix):
         return np.stack((x, y, z), axis=-1)
 
     # Given control points
-    num_vertical_divisions = 160
+    num_vertical_divisions = 40
     control_points = np.array([midx, midy, midz]).T
     tck, u = splprep(control_points.T, s=0)
     u_fine = np.linspace(0, 1, num_vertical_divisions)
@@ -80,9 +80,9 @@ def retrieve_vf_from_rib(rib_down, rib_up, skel_center, transf_matrix):
     print("distance center-new_a1:", np.mean(np.linalg.norm(np.array([new_a1_x, new_a1_y, new_a1_z]) - np.array([midx, midy, midz]), axis=0)))
     print("distance center-new_a2:", np.mean(np.linalg.norm(np.array([new_a2_x, new_a2_y, new_a2_z]) - np.array([midx, midy, midz]), axis=0)))
     b = 2.6 * np.mean(np.linalg.norm(np.array([new_a1_x, new_a1_y, new_a1_z]) - np.array([midx, midy, midz]), axis=0))
-    a = np.mean(np.linalg.norm(np.array([new_a1_x, new_a1_y, new_a1_z]) - np.array([midx, midy, midz]), axis=0))
+    a = 1.3 * np.mean(np.linalg.norm(np.array([new_a1_x, new_a1_y, new_a1_z]) - np.array([midx, midy, midz]), axis=0))
     # Define the number of points on each ellipse
-    n_ellipse_points = 40
+    n_ellipse_points = 80
 
     # Sweep the ellipse along the spline
     vertices = []
@@ -90,19 +90,19 @@ def retrieve_vf_from_rib(rib_down, rib_up, skel_center, transf_matrix):
 
     for i, (point, tangent) in enumerate(zip(spline_points, tangents)):
         # Compute a perpendicular vector to create the local coordinate system
-        # if np.allclose(tangent, [0, 0, 1]):
-        #     normal = np.array([0, 1, 0])
-        # else:
-        #     normal = np.array([0, 0, 1])
+        if np.allclose(tangent, [0, 0, 1]):
+            normal = np.array([0, 1, 0])
+        else:
+            normal = np.array([0, 0, 1])
 
         # normal direction is the same as the projection direction
-        normal = skel_center
-        normal_in_mesh_ref = np.linalg.inv(transf_matrix) @ np.array([*normal,1])
-        point_in_mesh_ref = np.linalg.inv(transf_matrix) @ np.array([*point,1])
-        y_offset_in_mesh_ref_frame = point_in_mesh_ref[1] - normal_in_mesh_ref[1]
-        # transform the offset to the skel frame
-        y_offset = transf_matrix @ np.array([0,y_offset_in_mesh_ref_frame,0,1])
-        normal[1] = point[1] + y_offset[1]
+        # normal = skel_center
+        # normal_in_mesh_ref = np.linalg.inv(transf_matrix) @ np.array([*normal,1])
+        # point_in_mesh_ref = np.linalg.inv(transf_matrix) @ np.array([*point,1])
+        # y_offset_in_mesh_ref_frame = point_in_mesh_ref[1] - normal_in_mesh_ref[1]
+        # # transform the offset to the skel frame
+        # y_offset = transf_matrix @ np.array([0,y_offset_in_mesh_ref_frame,0,1])
+        # normal[1] = point[1] + y_offset[1]
 
         binormal = np.cross(tangent, normal)
         binormal /= np.linalg.norm(binormal)

@@ -54,7 +54,7 @@ def fromPointCloud2(node, buffer, ros_cloud, max_points):
         IDX_RGB_IN_FIELD=3 # x, y, z, rgb
         
         # Get xyz -> invert because SMPL required Y-up
-        xyz = [(y,z,x) for x,y,z,rgb in cloud_data ] # (why cannot put this line below rgb?)
+        xyz = [(x,y,z) for x,y,z,rgb in cloud_data ] # (why cannot put this line below rgb?)
 
         # Get rgb
         # Check whether int or float

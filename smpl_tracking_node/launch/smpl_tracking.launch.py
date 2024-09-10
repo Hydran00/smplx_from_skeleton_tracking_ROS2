@@ -22,7 +22,7 @@ def generate_launch_description():
             "mirror":True,
             "model_type":"smpl", # smpl or smplx
             "model_path": expanduser("~")+ '/SKEL_WS/SKEL/models/smpl/SMPL_MALE.pkl',
-            "optimize_model": False,
+            "optimize_model": True,
         }
         ]
     )

@@ -96,31 +96,25 @@ class ParseBodyJson(Node):
         # convert to Y-up coordinate system
         vector3 = Vector3()
         # -y,z,x
-        vector3.x = vector[1]
-        vector3.y = vector[2]
-        vector3.z = vector[0]
+        vector3.x = vector[0]
+        vector3.y = vector[1]
+        vector3.z = vector[2]
         return vector3
 
     @staticmethod
     def quaternion1_from_dict(data):
         # convert quaternion to SMPL coordinate system
         quat = np.array([data['x'], data['y'], data['z'], data['w']])
-        if(np.linalg.norm([data['x'], data['y'], data['z'], data['w']]) == 0):
+        if(np.linalg.norm(quat) == 0):
             return Quaternion()
-        rot_mat = scipy.spatial.transform.Rotation.from_quat([data['x'], data['y'], data['z'], data['w']]).as_matrix()
-        # rotate the matrix by 90 degrees around x
-        # rot_mat = np.dot(ROT_90_DEG_X, rot_mat)
-        euler = scipy.spatial.transform.Rotation.from_matrix(rot_mat).as_euler('xyz', degrees=True)
+        euler = scipy.spatial.transform.Rotation.from_quat(quat).as_euler('xyz', degrees=True)
         # flip x with z
-        # tmp = euler[0]
-        # euler[0] = euler[2]
-        # euler[2] = tmp
-        # quat = scipy.spatial.transform.Rotation.from_euler('xyz', euler, degrees=True).as_quat()
-        euler_cpy = euler.copy()
-        euler_cpy[0] = euler[1]
-        euler_cpy[1] = euler[2]
-        euler_cpy[2] = euler[0]
-        quat = scipy.spatial.transform.Rotation.from_euler('xyz', euler_cpy, degrees=True).as_quat()
+        # euler_cpy = euler.copy()
+        # euler[0] = euler_cpy[2]
+        # euler[1] = -euler_cpy[0]
+        # euler[2] = euler_cpy[1]
+
+        quat = scipy.spatial.transform.Rotation.from_euler('xyz', euler, degrees=True).as_quat()
 
         quaternion = Quaternion()
         quaternion.x = quat[0]
@@ -134,16 +128,8 @@ class ParseBodyJson(Node):
         # convert quaternion to SMPL coordinate system
         quat = np.array([data['x'], data['y'], data['z'], data['w']])
 
-        if(np.linalg.norm([data['x'], data['y'], data['z'], data['w']]) == 0):
+        if(np.linalg.norm(quat) == 0):
             return Quaternion()
-        euler = scipy.spatial.transform.Rotation.from_quat([data['x'], data['y'], data['z'], data['w']]).as_euler('xyz', degrees=True)
-        euler_cpy = euler.copy()    
-        euler[0] = 0.0
-        euler[1] = 0.0
-        
-        euler[2] = -euler_cpy[0]
-        euler[0] = euler_cpy[2]
-        quat = scipy.spatial.transform.Rotation.from_euler('xyz', euler, degrees=True).as_quat()
         quaternion = Quaternion()
         quaternion.x = quat[0]
         quaternion.y = quat[1]
