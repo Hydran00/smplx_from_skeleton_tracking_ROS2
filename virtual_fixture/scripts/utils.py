@@ -198,12 +198,12 @@ def compute_torax_projection(mesh):
         pc_down.points = o3d.utility.Vector3dVector(ribs_down_vertices[i])
         pc_up = o3d.geometry.PointCloud()
         pc_up.points = o3d.utility.Vector3dVector(ribs_up_vertices[i])
-        mesh = retrieve_vf_from_rib(pc_down,pc_up, skel_center, transf_matrix)
+        vf = retrieve_vf_from_rib(pc_down,pc_up, skel_center, transf_matrix)
         # o3d.visualization.draw_geometries([mesh])
         if i == 0:
-            final_vf = mesh
+            final_vf = vf
             continue
-        final_vf += mesh
+        final_vf += vf
         
     o3d.visualization.draw_geometries([final_vf])
     return final_vf
