@@ -124,10 +124,7 @@ class SMPLTracking(Node):
             self.params_optimizer = SMPLModelOptimizer(self.model, learning_rate=0.1, num_betas=NUM_BETAS)
         self.betas_optimized = False
         
-        self.reference_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
-        self.reference_frame2 = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.5, origin=[0, 0, 0])
-        self.viz.add_geometry(self.reference_frame)
-        self.viz.add_geometry(self.reference_frame2)
+        # self.viz.add_geometry(self.reference_frame)
         self.spheres = []
         self.spheres_smpl = []
         self.it=0
@@ -349,31 +346,33 @@ class SMPLTracking(Node):
             self.get_logger().info("First mesh received")
             
             # add 21 spheres foreach joint location
-            for i in range(NUM_BODY_JOINTS):
-                sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.02)
-                sphere_smpl = o3d.geometry.TriangleMesh.create_sphere(radius=0.02)
-                sphere.compute_vertex_normals()
-                sphere_smpl.compute_vertex_normals()
-                sphere.paint_uniform_color([0, 1, 0])
-                sphere_smpl.paint_uniform_color([1, 0, 0])
-                sphere.translate(self.landmarks[0][i*3:i*3+3].detach().cpu().numpy(), relative=False)
-                sphere_smpl.translate(landmarks_smpl[0][i*3:i*3+3], relative=False)
-                self.spheres.append(sphere)
-                self.spheres_smpl.append(sphere_smpl)
-                self.viz.add_geometry(sphere)
-                self.viz.add_geometry(sphere_smpl)
+            # for i in range(NUM_BODY_JOINTS):
+            #     sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.02)
+            #     sphere_smpl = o3d.geometry.TriangleMesh.create_sphere(radius=0.02)
+            #     sphere.compute_vertex_normals()
+            #     sphere_smpl.compute_vertex_normals()
+            #     sphere.paint_uniform_color([0, 1, 0])
+            #     sphere_smpl.paint_uniform_color([1, 0, 0])
+            #     sphere.translate(self.landmarks[0][i*3:i*3+3].detach().cpu().numpy(), relative=False)
+            #     sphere_smpl.translate(landmarks_smpl[0][i*3:i*3+3], relative=False)
+            #     self.spheres.append(sphere)
+            #     self.spheres_smpl.append(sphere_smpl)
+            #     self.viz.add_geometry(sphere)
+            #     self.viz.add_geometry(sphere_smpl)
 
         else:
             self.viz.update_geometry(self.mesh)
-            for i in range(NUM_BODY_JOINTS):
-                self.spheres[i].translate(self.landmarks[0][i*3:i*3+3].detach().cpu().numpy(), relative=False)
-                self.spheres_smpl[i].translate(landmarks_smpl[0][i*3:i*3+3], relative=False)
-                self.viz.update_geometry(self.spheres[i])
-                self.viz.update_geometry(self.spheres_smpl[i])
+            # for i in range(NUM_BODY_JOINTS):
+            #     self.spheres[i].translate(self.landmarks[0][i*3:i*3+3].detach().cpu().numpy(), relative=False)
+            #     self.spheres_smpl[i].translate(landmarks_smpl[0][i*3:i*3+3], relative=False)
+            #     self.viz.update_geometry(self.spheres[i])
+            #     self.viz.update_geometry(self.spheres_smpl[i])
 
         # GET SKEL MODEL
         if self.betas_optimized:
             self.viz.remove_geometry(self.mesh)
+            path = os.path.expanduser('~')+"/SKEL_WS/ros2_ws/beta_opt.obj"
+            o3d.io.write_triangle_mesh(path, self.mesh)
             self.dump_transform()
             self.get_skel_model()
             self.viz.remove_geometry(self.mesh) 
@@ -386,26 +385,6 @@ class SMPLTracking(Node):
                 self.viz.poll_events()
                 self.viz.update_renderer()
                 time.sleep(0.03)
-        
-        # # Create the transformation matrix as identity
-        transf_matrix = np.eye(4)
-
-        # Get the absolute rotation and position
-        rot = self.mesh.get_rotation_matrix_from_xyz((0, 0, 0))
-        pos = self.mesh.get_center()
-
-        # Set the rotation part of the matrix
-        transf_matrix[:3, :3] = scipy.spatial.transform.Rotation.from_rotvec(self.global_orient[0].cpu().detach().numpy()).as_matrix()
-
-        # Set the translation part of the matrix
-        transf_matrix[:3, 3] = self.global_position[0].cpu().detach().numpy()
-
-        # Reset the reference_frame2 transformation before applying the new one
-
-        # Apply the absolute transformation
-        self.reference_frame2.transform(transf_matrix)
-
-        self.viz.update_geometry(self.reference_frame2)
 
         self.viz.poll_events()
         self.viz.update_renderer()

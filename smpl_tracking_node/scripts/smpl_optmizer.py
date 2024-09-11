@@ -107,8 +107,8 @@ class SMPLModelOptimizer:
         # translate the body to the surface
 
         # # optimize arms and legs again
-        self.optimize(logger, params=[self.body_pose], lr=0.001, loss_type='pose', num_iterations=500)
-        self.optimize(logger, params=[self.betas], lr=0.001, loss_type='pose', num_iterations=200)
+        self.optimize(logger, params=[self.body_pose], lr=0.001, loss_type='pose', num_iterations=100)
+        self.optimize(logger, params=[self.betas], lr=0.01, loss_type='shape', num_iterations=200)
 
         # self.optimize(logger, params=[self.betas], lr=0.01, loss_type='shape', num_iterations=200)
         
@@ -165,9 +165,9 @@ class SMPLModelOptimizer:
             # apply mask
             body_pose_masked = self.body_pose * self.mask[:, 3:]
             prior_loss = self.prior.forward(body_pose_masked, self.betas)
-            beta_loss = (self.betas**2).mean()
+            # beta_loss = (self.betas**2).mean()
             data_loss = self.chamfer_distance(generated_point_cloud_tensor.unsqueeze(0), self.target_point_cloud_tensor.unsqueeze(0), reverse=True)
-            return 0.1 * prior_loss + 0.01 * beta_loss + 1 * data_loss
+            return 0.1 * prior_loss + 0.01 + 1 * data_loss
 
     def get_smpl(self):
         return self.smpl_model(

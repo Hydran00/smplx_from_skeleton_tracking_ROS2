@@ -79,7 +79,10 @@ class VirtualFixtureCalculator(Node):
             vertex[0] = z
             vertex[1] = -x
             vertex[2] = y
+        faces = np.asarray(mesh.triangles)
+        mesh.clear()
         mesh.vertices = o3d.utility.Vector3dVector(vertices)
+        mesh.triangles = o3d.utility.Vector3iVector(faces)
         return mesh
 
 
