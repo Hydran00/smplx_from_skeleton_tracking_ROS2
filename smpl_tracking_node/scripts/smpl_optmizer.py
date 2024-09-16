@@ -9,6 +9,8 @@ from chamferdist import ChamferDistance
 import time 
 from utils import block
 import scipy
+from ament_index_python.packages import get_package_share_directory
+
 class SMPLModelOptimizer:
     def __init__(self, smpl_model, learning_rate=0.01, num_betas=10):
         self.smpl_model = smpl_model  # Assumes smpl_model is an instance of a pre-defined SMPL model class
@@ -24,34 +26,27 @@ class SMPLModelOptimizer:
         self.mesh = o3d.geometry.TriangleMesh()
         self.sphere_list = []
         self.target_sphere_list = []
-        
+        self.upper_body_idx_path = get_package_share_directory("virtual_fixture")+ '/skel_regions/upper_body_frontal.txt'
+        upper_body_faces = []
+        self.upper_body_vertices = set()
+        with open(self.upper_body_idx_path, 'r') as file:
+            lines = file.readlines()
+            for line in lines:
+                vars = line.split()
+                self.upper_body_vertices.add(int(vars[1]))
+                self.upper_body_vertices.add(int(vars[2]))
+                self.upper_body_vertices.add(int(vars[3]))
+        self.upper_body_vertices = list(self.upper_body_vertices)
+
         # self.viz = o3d.visualization.Visualizer()
     def get_mask_upper_body(self):
-        mask = torch.ones((1,72), device='cuda:0')
-        # mask neck
-        mask[0, 11*3:12*3+3] = 0
-        mask[0, 14*3:15*3+3] = 0
-        # # mask shoulder
-        mask[0, 15*3:13*3+3] = 0
-        mask[0, 16*3:13*3+3] = 0
-        # mask legs [4,5,7,8,10,11]
-        # mask[0, 1*3:1*3+3] = 0
-        # mask[0, 2*3:2*3+3] = 0
-        # mask[0, 4*3:4*3+3] = 0
-        # mask[0, 5*3:5*3+3] = 0
-        # mask[0, 7*3:7*3+3] = 0
-        # mask[0, 8*3:8*3+3] = 0
-        # mask[0, 10*3:10*3+3] = 0
-        # mask[0, 11*3:11*3+3] = 0
+        mask = torch.ones((1,69), device='cuda:0')
+        with torch.no_grad():
+            mask_idx = [0,1,3,4,6,7,9,10]
+            for i in mask_idx:
+                mask[0, i*3:i*3+3] = 0
         return mask
 
-    def get_mask_torax(self):
-        # mask neck, head, legs, arms
-        idx = [4,5,8,7,10,11,12,13,16,17,18,19,20,21,22,23]
-        mask = torch.ones((1,72), device='cuda:0')
-        for i in idx:
-            mask[0, i*3:i*3+3] = 0
-        return mask
 
     def optimize_model(self, logger, target_point_cloud, global_orient, global_position, body_pose, landmarks, viz, optimize_legs=False):
         """
@@ -63,62 +58,27 @@ class SMPLModelOptimizer:
         viz: Open3D visualizer object
         optimize_legs: If True, optimize legs. If False, keep legs fixed
         """
+        # Initialize visualizer
         self.viz = viz
+        # Get mask for upper body
+        if optimize_legs:
+            self.mask = torch.ones((1,69), device='cuda:0')
+        else:
+            self.mask = self.get_mask_upper_body()
 
         self.target_point_cloud_tensor = self.point_cloud_to_tensor(target_point_cloud).to('cuda:0')
         self.global_orient = global_orient.to('cuda:0').detach().requires_grad_()
         self.global_position = global_position.to('cuda:0').detach().requires_grad_()
-        self.body_pose = body_pose.to('cuda:0').detach().requires_grad_()
+        self.body_pose = body_pose.to('cuda:0').detach()
+        self.body_pose  = (self.body_pose * self.mask).requires_grad_()
+
         self.target_landmarks = landmarks.to('cuda:0')
         
-        # Initialize visualizer
-        self.target_point_cloud = target_point_cloud
 
-        # Get mask for upper body
-        if optimize_legs:
-            self.mask = torch.ones((1,72), device='cuda:0')
-        else:
-            self.mask = self.get_mask_upper_body()
-
-        # OPTIMIZING
-        output = self.get_smpl()
-        mesh = o3d.geometry.TriangleMesh()
-        mesh.vertices = o3d.utility.Vector3dVector(output.vertices[0].cpu().detach().numpy())
-        mesh.triangles = o3d.utility.Vector3iVector(self.smpl_model.faces)
-        # viz.add_geometry(mesh)
-        # viz.poll_events()
-        # viz.update_renderer()
-        # block(viz)        
-             
-        # self.optimize(logger, params=[self.global_position], loss_type='transl', num_iterations=100)
-
-        # block(viz)
+        self.optimize(logger, params=[self.global_position], lr=0.005, loss_type='transl', num_iterations=100)
+        self.optimize(logger, params=[self.body_pose], lr=0.001, loss_type='pose', num_iterations=300)
+        self.optimize(logger, params=[self.betas], lr=0.002, loss_type='shape', num_iterations=200)
         
-        # with torch.no_grad():
-        #     offset = - compute_distance_from_pelvis_joint_to_surface(self.mesh, self.global_position, self.global_orient)
-        #     if np.any(np.isinf(offset)):
-        #         logger.info("Offset is infinite. Skipping optimization")
-        #         offset = torch.tensor([np.array([0,0,0])], dtype=torch.float32, device='cuda:0')
-        #     else:
-        #         offset = torch.tensor([np.array(offset)], dtype=torch.float32, device='cuda:0')
-        #     self.global_position[0, :] =  self.global_position[0, :] + offset
-        # self.optimize(logger, params=[self.body_pose], lr=0.001, loss_type='pose', num_iterations=200)
-        
-        # translate the body to the surface
-
-        # # optimize arms and legs again
-        self.optimize(logger, params=[self.body_pose], lr=0.001, loss_type='pose', num_iterations=100)
-        self.optimize(logger, params=[self.betas], lr=0.01, loss_type='shape', num_iterations=200)
-
-        # self.optimize(logger, params=[self.betas], lr=0.01, loss_type='shape', num_iterations=200)
-        
-        # output = self.get_smpl()
-        # mesh = o3d.geometry.TriangleMesh()
-        # mesh.vertices = o3d.utility.Vector3dVector(output.vertices[0].cpu().detach().numpy())
-        # mesh.triangles = o3d.utility.Vector3iVector(self.smpl_model.faces)
-        # viz.add_geometry(mesh)
-        # viz.poll_events()
-        # block(viz)
         # remove gradient tracking
         self.global_position = self.global_position.detach()
         self.global_orient = self.global_orient.detach()
@@ -136,38 +96,35 @@ class SMPLModelOptimizer:
         else:
             raise TypeError("Unsupported point cloud format")
 
-    
+    def filter_upper_body(self, points):
+        return points[self.upper_body_vertices]
 
     def compute_loss(self, type, generated_point_cloud, landmarks=None):
         generated_point_cloud_tensor = self.point_cloud_to_tensor(generated_point_cloud).to('cuda:0')
+        generated_point_cloud_tensor_upper_body = self.filter_upper_body(generated_point_cloud_tensor)
         
         if type == "transl":
-            data_loss = self.chamfer_distance(self.target_point_cloud_tensor.unsqueeze(0), generated_point_cloud_tensor.unsqueeze(0), reverse=True)
+            data_loss = self.chamfer_distance(self.target_point_cloud_tensor.unsqueeze(0), generated_point_cloud_tensor_upper_body.unsqueeze(0), reverse=True)
             return data_loss
         
         if type == "pose":
-            lmk = landmarks[:24].reshape(1, 72)
+            lmk = landmarks[1:24].reshape(1, 69)
             # apply mask
             lmk_masked = lmk * self.mask
-            target_lmk_masked = self.target_landmarks * self.mask
+            target_lmk_masked = self.target_landmarks[0][3:72] * self.mask
             landmark_loss = self.landmark_loss(lmk_masked, target_lmk_masked)
-            # data_loss = self.chamfer_distance(self.target_point_cloud_tensor.unsqueeze(0), generated_point_cloud_tensor.unsqueeze(0), reverse=True)
-            body_pose_masked = self.body_pose * self.mask[:, 3:]
+            data_loss = self.chamfer_distance(self.target_point_cloud_tensor.unsqueeze(0), generated_point_cloud_tensor.unsqueeze(0), reverse=True)
+            body_pose_masked= self.body_pose * self.mask
             prior_loss = self.prior.forward(body_pose_masked, self.betas)
-            # return 0.1 * data_loss + landmark_loss + 0.01 * prior_loss
-            self.logger.info(f"Landmark loss: {landmark_loss}")
-
-            beta_loss = (self.betas**2).mean()
-
-            return 10 * landmark_loss + 0.01 * prior_loss + 10 * beta_loss
+            return 10 * landmark_loss + 0.5 * data_loss + 0.5 * prior_loss
         
         elif type == "shape":
             # apply mask
-            body_pose_masked = self.body_pose * self.mask[:, 3:]
+            body_pose_masked = self.body_pose * self.mask
             prior_loss = self.prior.forward(body_pose_masked, self.betas)
-            # beta_loss = (self.betas**2).mean()
-            data_loss = self.chamfer_distance(generated_point_cloud_tensor.unsqueeze(0), self.target_point_cloud_tensor.unsqueeze(0), reverse=True)
-            return 0.1 * prior_loss + 0.01 + 1 * data_loss
+            beta_loss = (self.betas**2).mean()
+            data_loss = self.chamfer_distance(generated_point_cloud_tensor_upper_body.unsqueeze(0), self.target_point_cloud_tensor.unsqueeze(0), reverse=True)
+            return 0.5 * prior_loss + 1 * data_loss + 0.5 * beta_loss
 
     def get_smpl(self):
         return self.smpl_model(

@@ -280,7 +280,7 @@ class SMPLTracking(Node):
             self.viz.update_geometry(self.point_cloud)
             self.viz.remove_geometry(self.mesh)
             # dump pointcloud
-            o3d.io.write_point_cloud("point_cloud.ply", self.point_cloud)
+            o3d.io.write_point_cloud(os.path.expanduser('~')+"/SKEL_WS/ros2_ws/point_cloud.ply", self.point_cloud)
             
             # perform forward step to create the mesh used in adjust_landmarks
             output = self.model(
@@ -304,26 +304,6 @@ class SMPLTracking(Node):
                                                        self.landmarks,
                                                        self.viz)
             self.betas_optimized = True
-            
-        # offset is already added in the optimization, but not in the normal case. 
-        # Skipping the first iteration since the mesh is needed for the computation of the offset
-        # if not self.first_mesh and not self.optimize_model:
-        #     # offset is due to the fact that the ZED Body Tracking SDK project the joints on the surface of the cloud and not in the anatomical position
-        #     with torch.no_grad():
-        #         if not self.offset_computed:
-        #             offset = -compute_distance_from_pelvis_joint_to_surface(self.mesh, self.global_position, self.global_orient)
-        #             # check if inf is returned
-        #             self.offset = torch.tensor(offset, dtype=torch.float32, device='cuda:0')
-        #             self.offset_computed = True
-        #             if True in torch.isinf(self.offset):
-        #                 self.get_logger().error("Offset is infinite")
-        #                 return
-        #         else:
-        #             self.global_position[0, :] =  self.global_position[0, :] + self.offset
-                    # block()
-                    
-            # self.viz.add_geometry(self.mesh)
-
 
         # forward pass
         output = self.model(

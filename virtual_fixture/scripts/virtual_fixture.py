@@ -34,10 +34,10 @@ class VirtualFixtureCalculator(Node):
 
         self.skin = o3d.io.read_triangle_mesh(self.skin_load_path)
 
-        o3d.visualization.draw_geometries([rib_cage, self.skin, reference_frame])
+        # o3d.visualization.draw_geometries([rib_cage, self.skin, reference_frame])
         rib_cage = self.transform_to_RH_Z_UP(rib_cage)
         self.skin = self.transform_to_RH_Z_UP(self.skin)
-        o3d.visualization.draw_geometries([rib_cage, self.skin, reference_frame])
+        # o3d.visualization.draw_geometries([rib_cage, self.skin, reference_frame])
         
         # rib_cage = rib_cage.to_legacy()
         
@@ -52,7 +52,7 @@ class VirtualFixtureCalculator(Node):
 
         rib_cage.transform(self.transform)
         self.skin.transform(self.transform)
-        o3d.visualization.draw_geometries([rib_cage, self.skin, reference_frame])
+        # o3d.visualization.draw_geometries([rib_cage, self.skin, reference_frame])
 
         # self.transform_mesh()
         # self.skin.compute_vertex_normals()
