@@ -83,13 +83,13 @@ def compute_torax_projection(mesh):
     skel_center_vertex_id = 25736
 
     skel_model_new  = o3d.t.geometry.TriangleMesh.from_legacy(skel_model)
-    color_faces(skel_model_new, skel_faces, [1.0, 0.0, 0.0])
+    # color_faces(skel_model_new, skel_faces, [1.0, 0.0, 0.0])
 
     rib_model_new  = o3d.t.geometry.TriangleMesh.from_legacy(skel_model)
-    color_faces(rib_model_new, rib_l_faces, [0.0, 1.0, 0.0])
+    # color_faces(rib_model_new, rib_l_faces, [0.0, 1.0, 0.0])
 
-    o3d.visualization.draw([skel_model_new])
-    o3d.visualization.draw([rib_model_new])
+    # o3d.visualization.draw([skel_model_new])
+    # o3d.visualization.draw([rib_model_new])
 
     scene = o3d.t.geometry.RaycastingScene()
     scene.add_triangles(humanoid)
@@ -192,18 +192,68 @@ def compute_torax_projection(mesh):
                     break
     
     final_vf = o3d.t.geometry.TriangleMesh()
+    final_pc = o3d.t.geometry.PointCloud()
+    colors = []
+    points = []
+    
     for i in range(len(ribs_down_vertices)):
         print("RIB ",i)
         pc_down = o3d.geometry.PointCloud()
         pc_down.points = o3d.utility.Vector3dVector(ribs_down_vertices[i])
         pc_up = o3d.geometry.PointCloud()
+
         pc_up.points = o3d.utility.Vector3dVector(ribs_up_vertices[i])
+        pc_down.points = o3d.utility.Vector3dVector(ribs_down_vertices[i])
+        
+        for j in range(len(ribs_down_vertices[i])):
+            colors.append([1,0,0])        
+            points.append(ribs_down_vertices[i][j])
+        for j in range(len(ribs_up_vertices[i])):    
+            colors.append([0,0,1])
+            points.append(ribs_up_vertices[i][j])
+
+
         vf = retrieve_vf_from_rib(pc_down,pc_up, skel_center, transf_matrix)
-        # o3d.visualization.draw_geometries([mesh])
+
         if i == 0:
             final_vf = vf
             continue
         final_vf += vf
+    print(colors)
+    print("Colors: ",np.array(colors).shape)
+    print(points[:10])
+    print("Points: ",np.array(points).shape)
+    
+    final_pc.point.positions = o3d.core.Tensor(np.array(points),dtype=o3d.core.Dtype.Float32)
+    final_pc.point.colors = o3d.core.Tensor(np.array(colors),dtype=o3d.core.Dtype.Float32)
+
+    # rotate geometries 190 deg on Y
+    R = final_pc.to_legacy().get_rotation_matrix_from_xyz((0, np.pi, 0))
+    final_pc.rotate(R, center=[0, 0, 0])
+    R = humanoid.to_legacy().get_rotation_matrix_from_xyz((0, np.pi, 0))
+    humanoid.rotate(R, center=[0, 0, 0])
+
+    R = skel_model_new.to_legacy().get_rotation_matrix_from_xyz((0, np.pi, 0))
+    skel_model_new.rotate(R, center=[0, 0, 0])
+    geometries = [
+        {
+            "name": "humanoid",
+            "geometry": humanoid,
+            "material": mat_skin
+        },
+        {
+            "name": "skel",
+            "geometry": skel_model_new,
+            # "material": mat_sphere_transparent
+        },
+        {
+            "name": "pcd",
+            "geometry": final_pc
+            # "material": mat_sphere_transparent
+        },
+    ]
+    
+    o3d.visualization.draw(geometries)
         
     o3d.visualization.draw_geometries([final_vf])
     return final_vf

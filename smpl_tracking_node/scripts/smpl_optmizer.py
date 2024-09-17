@@ -116,7 +116,7 @@ class SMPLModelOptimizer:
             data_loss = self.chamfer_distance(self.target_point_cloud_tensor.unsqueeze(0), generated_point_cloud_tensor.unsqueeze(0), reverse=True)
             body_pose_masked= self.body_pose * self.mask
             prior_loss = self.prior.forward(body_pose_masked, self.betas)
-            return 10 * landmark_loss + 0.5 * data_loss + 0.5 * prior_loss
+            return 10 * landmark_loss #+ 0.5 * data_loss #+ 0.5 * prior_loss
         
         elif type == "shape":
             # apply mask
@@ -124,7 +124,7 @@ class SMPLModelOptimizer:
             prior_loss = self.prior.forward(body_pose_masked, self.betas)
             beta_loss = (self.betas**2).mean()
             data_loss = self.chamfer_distance(generated_point_cloud_tensor_upper_body.unsqueeze(0), self.target_point_cloud_tensor.unsqueeze(0), reverse=True)
-            return 0.5 * prior_loss + 1 * data_loss + 0.5 * beta_loss
+            return 0.5 * prior_loss + 2 * data_loss + 0.5 * beta_loss
 
     def get_smpl(self):
         return self.smpl_model(
